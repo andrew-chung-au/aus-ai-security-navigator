@@ -7,13 +7,13 @@ import time
 import pandas as pd
 import requests
 
-
 MANIFEST_PATH = "data/source_manifest_core.csv"
-RAW_DIR = Path("data/raw")
+RAW_HTML_DIR = Path("data/raw/html")
+RAW_PDF_DIR = Path("data/raw/pdf")
 METADATA_PATH = Path("data/download_metadata.json")
 
-
-RAW_DIR.mkdir(parents=True, exist_ok=True)
+RAW_HTML_DIR.mkdir(parents=True, exist_ok=True)
+RAW_PDF_DIR.mkdir(parents=True, exist_ok=True)
 
 manifest = pd.read_csv(MANIFEST_PATH)
 
@@ -33,7 +33,14 @@ for row in manifest.itertuples(index=False):
     response.raise_for_status()
 
     content = response.content
-    local_file = RAW_DIR / f"{row.source_id}.html"
+
+    if row.content_type == "html":
+        local_file = RAW_HTML_DIR / f"{row.source_id}.html"
+    elif row.content_type == "pdf":
+        local_file = RAW_PDF_DIR / f"{row.source_id}.pdf"
+    else:
+        raise ValueError(f"Unsupported content_type for {row.source_id}: {row.content_type}")
+
     local_file.write_bytes(content)
 
     records.append(

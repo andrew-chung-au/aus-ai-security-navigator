@@ -27,19 +27,19 @@ Date: 2026-07-22
 Status: Accepted
 
 ### Decision
-Use a manually curated ACSC AI guidance corpus as the initial project dataset, starting with a core subset of documents rather than indexing the entire related website.
+Use a manually curated ACSC AI guidance corpus as the initial project dataset, including a core set of HTML guidance pages and the attached PDF guidance on defending against AI-enabled cyber attacks, rather than indexing the entire related website.
 
 ### Reason
-A curated corpus is easier to reproduce, easier to evaluate, and more likely to produce relevant retrieval results than a broad crawl. It also keeps the project manageable within the available timeframe.
+A curated corpus is easier to reproduce, easier to evaluate, and more likely to produce relevant retrieval results than a broad crawl. Including the attached PDFs in the core set adds audience-specific and operational guidance that complements the broader HTML pages while keeping the project manageable within the available timeframe.
 
 ### Alternatives considered
 - Index only the ACSC AI landing page
 - Crawl all linked AI guidance pages
+- Use only the HTML guidance pages in the first build
 - Use a broader cyber-security corpus
 
 ### Trade-offs
-A smaller corpus reduces noise and simplifies evaluation, but may miss some edge-case questions until later expansion.
+Including both HTML pages and attached PDFs improves coverage, especially for operational and audience-specific questions, but introduces mixed-format extraction and cleanup work. A curated corpus still reduces noise compared with a broad crawl, but some overlap between documents will need to be managed through metadata and chunking.
 
 ### Impact
-The source manifest will distinguish between core and boundary documents, and the downloader will initially retrieve only core sources.
-
+The source manifest will distinguish between core HTML pages, core attached PDFs, and boundary documents. The downloader and extraction workflow will support both HTML and PDF sources in the first index build.
