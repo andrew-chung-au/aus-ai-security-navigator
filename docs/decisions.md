@@ -99,3 +99,52 @@ Ignoring audience would simplify ingestion, but would weaken one of the main dif
 - The source manifest includes a normalized `audience_tag` for each document.
 - Chunk preparation scripts carry `audience_tag` into every chunk record in the retrieval corpus.
 - Retrieval evaluation will include audience-aware queries (e.g. small vs medium vs large/gov) to verify that audience metadata improves results and supports more interpretable answers.
+
+---
+
+## D-004 — Chunking strategy and QA
+Date: 2026-07-22  
+Status: Accepted
+
+### Decision
+Use a heading-aware, structure-preserving chunking strategy over the cleaned Markdown corpus, combined with a small manual spot-check step for sampled chunks before retrieval indexing.
+
+The minimum chunk schema for the first build remains:
+
+- `source_file`
+- `document_title`
+- `heading_path`
+- `audience_tag`
+- `chunk_text`
+
+### Reason
+The ACSC AI guidance corpus is small, curated, and has strong existing structure (titles, sections, lists, tables, and repeated risk / mitigation patterns). A heading-aware chunking strategy is a better fit than blind fixed-size windows because it:
+
+- preserves document hierarchy and section context,
+- keeps related content (for example, “Scope and audience” and risk / mitigation sections) together where practical, and
+- avoids splitting lists and tables mid-structure when that would harm retrieval.
+
+A lightweight manual spot-check of sampled chunks is a pragmatic QA step for a semi-manual pipeline. It helps verify that heading paths, audience tags, and key structures (lists, tables) have survived extraction and chunking before building embeddings and retrieval indexes.
+
+### Alternatives considered
+- Fixed-size token or character windows with simple overlap
+- Purely semantic chunking without respecting headings
+- Relying only on automated extraction and chunking, with no manual QA step
+
+### Trade-offs
+Heading-aware chunking plus manual QA:
+
+- improves retrieval-quality prospects for a small, structured corpus, but
+- adds some implementation complexity to the chunking script and a small amount of human time for spot-checking.
+
+Fixed-size windows would be simpler to implement and easier to reuse across very large or unstructured corpora, but would:
+
+- ignore meaningful ACSC section boundaries,
+- increase the risk of splitting tables and paired guidance (risk plus mitigation) in unhelpful ways, and
+- make audience-aware and document-specific explanations harder to trace back to the original structure.
+
+### Impact
+- Chunk preparation is explicitly structure-aware and anchored to document titles and `heading_path`.
+- The minimum chunk schema stays simple but supports provenance and audience-aware retrieval.
+- A small script (`src/spotcheck_chunks.py`) and accompanying docs (`docs/reproducibility.md`) document how sampled chunks are exported and inspected as part of the reproducible workflow.
+- Evaluation and retrieval design can assume that chunk structure reflects ACSC guidance layout, not arbitrary windowing, which should improve grounded answer quality for audience-specific and document-specific queries.

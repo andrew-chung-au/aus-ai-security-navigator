@@ -96,7 +96,7 @@ This approach is intended to:
 
 - preserve document structure and semantic boundaries
 - keep related material together
-- reduce the risk of splitting lists, tables, or paired risk/mitigation content in unhelpful ways
+- reduce the risk of splitting lists, tables, or paired risk / mitigation content in unhelpful ways
 
 ### General rules
 
@@ -156,7 +156,7 @@ Examples in the first build include:
 Some source documents have recurring structures that the chunking process should preserve.
 
 ### AI-enabled cyber attack PDF guides
-These guides are mostly structured as a document title plus time- or action-based sections. Each major section should generally stay intact with its associated action bullets.
+These guides are audience-segmented (small business, medium-sized business, and government / critical infrastructure / large enterprise) and are mostly structured as a document title plus time- or action-based sections. Each major section should generally stay intact with its associated action bullets.
 
 ### Guidelines for secure AI system development
 Development life cycle phases contain related principles and action items. These should remain tied to their parent phase context.
@@ -166,6 +166,31 @@ Risk and security domains contain nested scenario examples and recommended best 
 
 ### Artificial intelligence and machine learning: Supply chain risks and mitigations
 Domain sections contain nested risks, mitigations, and supporting material. These should be chunked with their parent domain context preserved.
+
+## Manual chunk QA
+
+For the first build, a small sampled subset of chunks can be exported from `data/chunks/chunks.jsonl` and manually inspected before retrieval indexing.
+
+This spot-check is intended to verify that:
+
+- `heading_path` reflects the cleaned Markdown structure
+- `audience_tag` has been propagated correctly from the manifest
+- lists and tables were not broken badly
+- paired or closely related sections remain coherent where intended
+
+Representative spot-checks should include one or two chunks from major source types, such as:
+
+- the small-business PDF
+- the medium-business PDF
+- the government / critical infrastructure / large enterprise PDF
+- selected HTML guidance pages
+
+Where used, this produces inspection files such as:
+
+- `data/chunks/spotcheck.jsonl`
+- `data/chunks/spotcheck.json`
+
+This QA step is lightweight and manual, but it helps confirm corpus quality before embeddings, retrieval indexing, and evaluation are added.
 
 ## Current first-build status
 
@@ -178,6 +203,8 @@ For the first build:
 - each chunk carries `audience_tag` from the manifest
 - heading-aware chunking is implemented
 - long enumerated sections can be split into item-level chunks where needed
+- diagnostic fields such as chunk word count, character count, or line count may be present for inspection, but are treated as non-core metadata
+- a small sampled subset of chunks can be exported and manually inspected before retrieval indexing
 
 ## Summary
 
@@ -186,5 +213,6 @@ For the first build:
 - Sources are extracted and cleaned into Markdown, with a documented manual correction step for structural issues.
 - Audience tags are defined deterministically in the manifest and propagated into the chunked corpus.
 - The first retrieval-ready corpus is stored as `data/chunks/chunks.jsonl`.
-- Chunking is structure-aware and preserves headings, lists, tables, and risk/mitigation relationships where practical.
+- Chunking is structure-aware and preserves headings, lists, tables, and risk / mitigation relationships where practical.
 - Long enumerated guidance sections may be split into item-level chunks when that improves retrieval focus.
+- A small manual spot-check step can be used to inspect sampled chunks before retrieval indexing.

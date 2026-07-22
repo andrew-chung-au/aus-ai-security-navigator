@@ -1,6 +1,6 @@
 # Reproducibility
 
-This project is designed to be reproducible from a clean checkout using a documented environment, a manifest-defined dataset, and a semi-manual extraction workflow.
+This project is designed to be reproducible from a clean checkout using a documented environment, a manifest-defined dataset, a semi-manual extraction workflow, a structure-aware chunking process, and a small manual QA step before retrieval indexing. Reproducible workflows benefit from clearly documented inputs, scripted transformations, and explicit validation points, especially where human review is part of the pipeline. [web:105][web:106][web:111]
 
 ## Environment
 
@@ -24,8 +24,8 @@ This creates the Python environment and installs all dependencies at the pinned 
 
 ### Source manifest
 
-- Core dataset is defined in: `data/source_manifest_core.csv`
-- Each row describes a single ACSC source with:
+- The core dataset is defined in `data/source_manifest_core.csv`.
+- Each row describes a single ACSC source with fields such as:
   - `source_id`
   - `title`
   - `url`
@@ -52,17 +52,30 @@ The end-to-end workflow is:
 
    Read `data/source_manifest_core.csv` and download each URL to the appropriate raw folder based on `content_type`.
 
+   ```bash
+   uv run python src/download_sources.py
+   ```
+
 2. **Extract HTML**
 
-   Convert downloaded HTML files into local text/Markdown files in `data/processed/`, preserving headings, lists, and tables as far as practical.
+   Convert downloaded HTML files into local Markdown files in `data/processed/`, preserving headings, lists, and tables as far as practical.
+
+   ```bash
+   uv run python src/extract.py data/raw/html
+   ```
 
 3. **Extract PDF documents**
 
-   Convert downloaded PDFs into local text/Markdown files in `data/processed/`, with attention to reading order and structural elements.
+   Convert downloaded PDFs into local Markdown files in `data/processed/`, with attention to reading order and structural elements.
 
-4. **Manually review and edit extracted text**
+   ```bash
+   uv run python src/extract_pdf.py data/raw/pdf
+   ```
 
-   Review the processed text files and correct extraction issues such as:
+4. **Manually review and edit extracted Markdown**
+
+   Review the processed Markdown files and correct extraction issues such as:
+
    - broken or missing headings
    - repeated headers, footers, or navigation chrome
    - duplicated paragraphs
@@ -70,46 +83,101 @@ The end-to-end workflow is:
    - table structure problems
    - PDF reading-order issues
 
-   The corrected Markdown files form the cleaned corpus used for retrieval.
+   The corrected Markdown files form the **cleaned corpus** used for chunking and retrieval.
 
-5. **Prepare processed corpus**
+5. **Prepare retrieval-ready chunks**
 
-   Use the cleaned Markdown to:
-   - apply heading-aware chunking (sections anchored to titles and heading paths)
+   Use the cleaned Markdown to build the retrieval corpus in `data/chunks/chunks.jsonl`:
+
+   - apply heading-aware chunking (chunks anchored to document titles and heading paths)
    - propagate `audience_tag` from the manifest into each chunk
-   - handle tables as special chunks (intact tables or row-wise text as appropriate)
+   - keep lists intact where practical
+   - treat tables and related risk / mitigation sections as special cases so structure and semantics are preserved
+   - handle long enumerated sections by splitting into smaller item-level chunks when needed
 
-6. **Build retrieval index**
+   ```bash
+   uv run python src/prepare_chunks.py
+   ```
 
-   Embed the chunks and build the retrieval index over the processed corpus, using the manifest metadata (e.g. `source_id`, `title`, `audience_tag`) for filtering and evaluation.
+   The minimum chunk schema is:
 
-7. **Run evaluation / app**
+   - `source_file`
+   - `document_title`
+   - `heading_path`
+   - `audience_tag`
+   - `chunk_text`
+
+6. **Spot-check sampled chunks**
+
+   After `data/chunks/chunks.jsonl` is produced, manually inspect a small sample of chunks before building the retrieval index. This spot-check is a lightweight QA step to confirm that the chunking rules behaved as intended across representative source types. Explicit validation steps improve reproducibility because they document how intermediate outputs are checked, not just how they are created. [web:97][web:101][web:93]
+
+   A representative spot-check should include around 10 to 15 chunks, covering one or two chunks from each important source type, for example:
+
+   - the small-business PDF
+   - the medium-business PDF
+   - the government / critical infrastructure / large enterprise PDF
+   - selected HTML guidance pages
+
+   During inspection, confirm that:
+
+   - `heading_path` reflects the cleaned Markdown structure
+   - `audience_tag` matches the document-level manifest value
+   - lists and tables were not broken badly
+   - section groupings remain coherent where intended
+
+   Example command:
+
+   ```bash
+   uv run python src/spotcheck_chunks.py
+   ```
+
+   Expected outputs:
+
+   - `data/chunks/spotcheck.jsonl`
+   - `data/chunks/spotcheck.json`
+
+   The JSON array output can be opened in VS Code or another JSON viewer for easier visual inspection.
+
+7. **Build retrieval index**
+
+   Embed the chunks and build a retrieval index over `data/chunks/chunks.jsonl`, using manifest metadata such as `source_id`, `title`, and `audience_tag` for filtering and evaluation.
+
+   Embedding and index-building commands depend on the chosen library or service and are documented alongside the retrieval code.
+
+8. **Run evaluation / app**
 
    - Run retrieval evaluation scripts over a small set of test queries.
-   - Run the application (e.g. Streamlit or CLI) to interact with the RAG assistant.
+   - Run the application (for example, a notebook, CLI, or simple UI) to interact with the RAG assistant.
 
 ## Commands
 
-From the project root, the core ingestion and extraction steps can be reproduced with:
+From the project root, the core ingestion, chunk-preparation, and QA steps can be reproduced with:
 
 ```bash
 uv sync
 uv run python src/download_sources.py
-uv run python src/extract_text_html.py data/raw/html
+uv run python src/extract.py data/raw/html
 uv run python src/extract_pdf.py data/raw/pdf
+uv run python src/prepare_chunks.py
+uv run python src/spotcheck_chunks.py
 ```
 
-Adjust paths as needed if your extractor scripts take different arguments.
+Adjust paths or script names as needed if local filenames differ.
 
 ## Outputs
 
-Key outputs after running the ingestion and extraction workflow:
+Key outputs after running the ingestion, chunk-preparation, and spot-check workflow:
 
 - Raw downloads:
-  - `data/raw/html/` – downloaded HTML sources (`{source_id}.html`)
-  - `data/raw/pdf/` – downloaded PDF sources (`{source_id}.pdf`)
-- Processed text:
-  - `data/processed/` – extracted and manually reviewed Markdown/text files for each source
+  - `data/raw/html/` – downloaded HTML sources (e.g. `{source_id}.html`)
+  - `data/raw/pdf/` – downloaded PDF sources (e.g. `{source_id}.pdf`)
+- Processed Markdown:
+  - `data/processed/` – extracted and manually reviewed Markdown files for each source
+- Retrieval corpus:
+  - `data/chunks/chunks.jsonl` – retrieval-ready chunks with the minimum schema
+- Chunk QA samples:
+  - `data/chunks/spotcheck.jsonl` – sampled chunks for manual review
+  - `data/chunks/spotcheck.json` – JSON array version for easier visual inspection
 - Provenance metadata:
   - `data/download_metadata.json` – download-time metadata including:
     - source ID, title, URL
@@ -120,21 +188,25 @@ Key outputs after running the ingestion and extraction workflow:
     - status code
     - SHA-256 hash
 
-Downstream corpus and index files (e.g. `data/corpus/chunks.jsonl`) are produced by later steps and are documented in the retrieval/evaluation code.
-
 ## Notes
 
 - **Semi-manual extraction**
 
-  Extraction is semi-manual by design: scripts perform the initial HTML and PDF text extraction, and the extracted text is then manually reviewed and edited before ingestion. This is a one-time quality-improvement step for a small, curated corpus and is documented so reviewers can understand where human judgement was applied.
+  Extraction is semi-manual by design: scripts perform the initial HTML and PDF text extraction, and the extracted Markdown is then manually reviewed and edited before chunking. This is a one-time quality-improvement step for a small, curated corpus and is documented so reviewers can understand where human judgement was applied.
 
 - **Audience-aware design**
 
   The manifest’s `audience_tag` field defines a deterministic audience label per document. This label is used when preparing the retrieval corpus so that chunks carry audience metadata, supporting audience-aware retrieval and evaluation.
 
+- **Manual chunk QA**
+
+  After `data/chunks/chunks.jsonl` is produced, a small sample of chunks can be exported for manual inspection. This spot-check is used to confirm that heading-aware chunking preserved section structure, audience metadata, and important list or table content across representative source types before retrieval indexing begins. [web:94][web:101]
+
 - **Reproducibility guarantees**
 
   - Environment: pinned dependencies and a documented setup command (`uv sync`).
-  - Data: manifest-defined, public ACSC sources with recorded URLs and basic provenance metadata.
-  - Workflow: each ingestion step is driven by scripts whose commands and expected outputs are documented here and in `README.md`.
-  - Manual steps: the manual review of extracted text is explicitly described, and cleaned files are stored in `data/processed/` for inspection.
+  - Data: manifest-defined, public ACSC sources with recorded URLs and provenance metadata.
+  - Workflow: each ingestion and chunking step is driven by scripts whose commands and expected outputs are documented here and in `README.md`.
+  - Manual steps: the manual review of extracted Markdown is explicitly described, and cleaned files are stored in `data/processed/` for inspection.
+  - Retrieval corpus: the first-build chunks are produced deterministically from the cleaned Markdown and manifest, and written to `data/chunks/chunks.jsonl`.
+  - QA: a small documented spot-check step is included before retrieval indexing so intermediate corpus quality can be inspected, not only assumed. [web:97][web:101]
