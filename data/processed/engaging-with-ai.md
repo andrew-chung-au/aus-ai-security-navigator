@@ -1,3 +1,5 @@
+# Engaging with artificial intelligence
+
 ## Introduction
 
 The purpose of this publication is to provide organisations with guidance on how to use AI systems securely. The paper summarises some important threats related to AI systems and prompts organisations to consider steps they can take to engage with AI while managing risk. It provides mitigations to assist both organisations that use self-hosted and third-party hosted AI systems.

@@ -1,3 +1,5 @@
+# Artificial intelligence for small business: Managing cyber security risks
+
 ## Introduction
 
 Small business owners often seek ways to stay ahead of the competition and drive growth. One technology making a big impact is artificial intelligence (AI).

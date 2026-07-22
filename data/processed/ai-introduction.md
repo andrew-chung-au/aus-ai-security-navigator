@@ -1,3 +1,5 @@
+# An introduction to artificial intelligence
+
 ## Introduction
 
 Artificial intelligence (AI) is an emerging technology that will play an increasingly influential role in the everyday life of Australians. In response to the rising interest and discussion around AI, the Australian Signals Directorate (ASD) is expanding its AI guidance to help individuals and organisations engage with AI systems in a secure way. The purpose of this publication is to provide readers with an understanding of what AI is and how it may impact the digital systems and services they use.

@@ -1,3 +1,5 @@
+# Careful adoption of agentic AI services
+
 ## Introduction
 
 Agentic artificial intelligence (AI) systems increasingly operate across critical infrastructure and defence sectors and support mission-critical capabilities. As agentic AI systems play a growing operational role, it is crucial for defenders to implement security controls to protect national security and critical infrastructure from agentic AI-specific risks.
