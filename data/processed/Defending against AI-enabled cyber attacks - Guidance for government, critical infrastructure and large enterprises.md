@@ -27,10 +27,9 @@ The Australian Signals Directorate’s Australian Cyber Security Centre (ASD’s
 * Consider using software-as-a-service cloud services for internet-facing services, from secure and transparent cloud service providers that are responsible for rapidly remediating vulnerabilities on behalf of the organisation.
 * Use software from suppliers with a demonstrated commitment to security and transparency, to reduce the number of vulnerabilities requiring remediation, and to ensure that patches or mitigations are provided promptly.
 * Use software from suppliers that securely provide adequately tested patches separate to optional feature updates, so that automatic patching can be enabled with low risk of supply chain attacks and faulty/incompatible patches.
-
-## Recommended actions - long-term
-
 * Consider using AI, in a secure, controlled and human-supervised manner, to find and confirm vulnerabilities in code you build for internet-facing services, before release into production and periodically for code in production.
 * Consider using AI, in a secure, controlled and human-supervised manner, to assist with analysing security logs from internet-facing services, and performing penetration tests and vulnerability assessments of internet-facing services.
 * Consider which other computing devices, based on a risk assessment, would benefit from timely patching, network segmentation and segregation, least privilege accounts, secure configuration baselines, and prompt log analysis.
+
+## Recommended actions - long-term
 * Progress to a modern defensible architecture aligned to a layered architecture with clear traceability of architectural designs to business, security and resilience objectives, using zero trust principles and Secure by Design practices.

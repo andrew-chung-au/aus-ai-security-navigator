@@ -30,6 +30,7 @@ This CSI outlines potential risks in AI systems stemming from data security issu
 
 Data security is a critical enabler that spans all phases of the AI system lifecycle. ML models learn their decision logic from data, so an attacker who can manipulate the data can also manipulate the logic of an AI-based system. In the AI Risk Management Framework (RMF) [3], the National Institute of Standards and Technology (NIST) defines six major stages in the lifecycle of AI systems, starting from Plan & Design and progressing all the way to Operate & Monitor. The following table highlights relevant data security factors for each stage of the AI lifecycle:
 
+*Table 1: The AI System Lifecycle with key dimensions, necessary ongoing assessments, focus areas for data security, and particular data security risks covered in this CSI. [3]*
 | AI Lifecycle Stage | Key Dimensions | Test, Evaluation, Verification, & Validation (TEVV) | Potential Focus Areas for Data Security | Particular Data Security Risks Covered in this CSI |
 | :--- | :--- | :--- | :--- | :--- |
 | 1) Plan & Design | Application Context | Audit & Impact Assessment | Incorporating data security measures from inception, designing robust security protocols, threat modeling, and including privacy by design | Data supply chain |
@@ -352,17 +353,17 @@ Generative AI technology was carefully and responsibly used in the development o
 
 ## Footnotes:
 
-- In this document, Artificial Intelligence (AI) has the meaning set forth in 15 U.S.C. 9401(3): “… a machine-based system that can, for a given set of human-defined objectives, make predictions, recommendations, or decisions influencing real or virtual environments. AI systems use machine- and human-based inputs to:
-  - Perceive real and virtual environments;
-  - Take these perceptions and turn them into models through analysis in an automated manner; and
-  - Use model inference to formulate options for information or action.”
+1. In this document, Artificial Intelligence (AI) has the meaning set forth in 15 U.S.C. 9401(3): “… a machine-based system that can, for a given set of human-defined objectives, make predictions, recommendations, or decisions influencing real or virtual environments. AI systems use machine- and human-based inputs to:
+  A. Perceive real and virtual environments;
+  B. Take these perceptions and turn them into models through analysis in an automated manner; and
+  C. Use model inference to formulate options for information or action.”
 
-- Data integrity is defined by the IC Data Management Lexicon [1] as “The degree to which data can be trusted due to its provenance, pedigree, lineage and conformance with all business rules regarding its relationship with other data. In the context of data movement, this is the degree to which data has verifiably not been changed unexpectedly by a person or NPE.”
+2. Data integrity is defined by the IC Data Management Lexicon [1] as “The degree to which data can be trusted due to its provenance, pedigree, lineage and conformance with all business rules regarding its relationship with other data. In the context of data movement, this is the degree to which data has verifiably not been changed unexpectedly by a person or NPE.”
 
-- The term data consumers is defined as technical personnel (e.g. data scientists, engineers) who make use of data that they themselves did not produce or annotate to build and/or operate AI systems.
+3. The term data consumers is defined as technical personnel (e.g. data scientists, engineers) who make use of data that they themselves did not produce or annotate to build and/or operate AI systems.
 
-- Model inversion refers to the process by which an attacker analyzes the output patterns of an AI system to reverse-engineer and uncover details about the training dataset, such as individual data points or patterns. This process can potentially expose confidential or proprietary information from the data that was used to train the AI models.
+4. Model inversion refers to the process by which an attacker analyzes the output patterns of an AI system to reverse-engineer and uncover details about the training dataset, such as individual data points or patterns. This process can potentially expose confidential or proprietary information from the data that was used to train the AI models.
 
-- “A data statement is a characterization of a dataset that provides context to allow developers and users to better understand how experimental results might generalize, how software might be appropriately deployed, and what biases might be reflected in systems built on the software.” [23]
+5. “A data statement is a characterization of a dataset that provides context to allow developers and users to better understand how experimental results might generalize, how software might be appropriately deployed, and what biases might be reflected in systems built on the software.” [23]
 
-- “In technical systems, bias is most commonly understood and treated as a statistical phenomenon. Bias is an effect that deprives a statistical result of representativeness by systematically distorting it, as distinct from random error, which may distort on any one occasion but balances out on the average.” [26] [32]
+6. “In technical systems, bias is most commonly understood and treated as a statistical phenomenon. Bias is an effect that deprives a statistical result of representativeness by systematically distorting it, as distinct from random error, which may distort on any one occasion but balances out on the average.” [26] [32]

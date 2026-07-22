@@ -12,13 +12,13 @@ AI systems are subject to novel security vulnerabilities that need to be conside
 
 For this reason, the guidelines are broken down into four key areas within the AI system development life cycle: secure design, secure development, secure deployment, and secure operation and maintenance. For each section we suggest considerations and mitigations that will help reduce the overall risk to an organisational AI system development process.
 
-- **Secure design:** This section contains guidelines that apply to the design stage of the AI system development life cycle. It covers understanding risks and threat modelling, as well as specific topics and trade-offs to consider on system and model design.
+1. **Secure design:** This section contains guidelines that apply to the design stage of the AI system development life cycle. It covers understanding risks and threat modelling, as well as specific topics and trade-offs to consider on system and model design.
 
-- **Secure development:** This section contains guidelines that apply to the development stage of the AI system development life cycle, including supply chain security, documentation, and asset and technical debt management.
+2. **Secure development:** This section contains guidelines that apply to the development stage of the AI system development life cycle, including supply chain security, documentation, and asset and technical debt management.
 
-- **Secure deployment:** This section contains guidelines that apply to the deployment stage of the AI system development life cycle, including protecting infrastructure and models from compromise, threat or loss, developing incident management processes, and responsible release.
+3. **Secure deployment:** This section contains guidelines that apply to the deployment stage of the AI system development life cycle, including protecting infrastructure and models from compromise, threat or loss, developing incident management processes, and responsible release.
 
-- **Secure operation and maintenance:** This section contains guidelines that apply to the secure operation and maintenance stage of the AI system development life cycle. It provides guidelines on actions particularly relevant once a system has been deployed, including logging and monitoring, update management and information sharing.
+4. **Secure operation and maintenance:** This section contains guidelines that apply to the secure operation and maintenance stage of the AI system development life cycle. It provides guidelines on actions particularly relevant once a system has been deployed, including logging and monitoring, update management and information sharing.
 
 The guidelines follow a ‘secure by default’ approach, and are aligned closely to practices defined in the NCSC’s Secure development and deployment guidance, NIST’s Secure Software Development Framework, and ‘secure by design principles’ published by CISA, the NCSC and international cyber agencies. They prioritise:
 
