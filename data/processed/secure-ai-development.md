@@ -14,6 +14,12 @@ AI systems are subject to novel security vulnerabilities that need to be conside
 
 For this reason, the guidelines are broken down into four key areas within the AI system development life cycle: secure design, secure development, secure deployment, and secure operation and maintenance. For each section we suggest considerations and mitigations that will help reduce the overall risk to an organisational AI system development process.
 
+The guidelines follow a ‘secure by default’ approach, and are aligned closely to practices defined in the NCSC’s Secure development and deployment guidance, NIST’s Secure Software Development Framework, and ‘secure by design principles’ published by CISA, the NCSC and international cyber agencies. They prioritise:
+
+- taking ownership of security outcomes for customers
+- embracing radical transparency and accountability
+- building organisational structure and leadership so secure by design is a top business priority
+
 1. **Secure design:** This section contains guidelines that apply to the design stage of the AI system development life cycle. It covers understanding risks and threat modelling, as well as specific topics and trade-offs to consider on system and model design.
 
 2. **Secure development:** This section contains guidelines that apply to the development stage of the AI system development life cycle, including supply chain security, documentation, and asset and technical debt management.
@@ -21,12 +27,6 @@ For this reason, the guidelines are broken down into four key areas within the A
 3. **Secure deployment:** This section contains guidelines that apply to the deployment stage of the AI system development life cycle, including protecting infrastructure and models from compromise, threat or loss, developing incident management processes, and responsible release.
 
 4. **Secure operation and maintenance:** This section contains guidelines that apply to the secure operation and maintenance stage of the AI system development life cycle. It provides guidelines on actions particularly relevant once a system has been deployed, including logging and monitoring, update management and information sharing.
-
-The guidelines follow a ‘secure by default’ approach, and are aligned closely to practices defined in the NCSC’s Secure development and deployment guidance, NIST’s Secure Software Development Framework, and ‘secure by design principles’ published by CISA, the NCSC and international cyber agencies. They prioritise:
-
-- taking ownership of security outcomes for customers
-- embracing radical transparency and accountability
-- building organisational structure and leadership so secure by design is a top business priority
 
 ## Introduction
 
@@ -232,19 +232,19 @@ You participate in information-sharing communities, collaborating across the glo
 
 ### AI development
 
-- **Principles for the security of machine learning:** The NCSC’s detailed guidance on developing, deploying or operating a system with an ML component.
-- **Secure by Design - Shifting the Balance of Cybersecurity Risk: Principles and Approaches for Secure by Design Software:** Co-authored by CISA, the NCSC and other agencies, this guidance describes how manufacturers of software systems, including AI, should take steps to factor security into the design stage of product development, and ship products that come secure out of the box.
-- **AI Security Concerns in a Nutshell:** Produced by the German Federal Office for Information Security (BSI), this document provides an introduction to possible attacks on machine learning systems and potential defences against those attacks.
-- **Hiroshima Process International Guiding Principles for Organizations Developing Advanced AI Systems and Hiroshima Process International Code of Conduct for Organizations Developing Advanced AI Systems:** These documents, produced as part of the G7 Hiroshima AI Process, provide guidance for organisations developing the most advanced AI systems, including the most advanced foundation models and generative AI systems with the aim of promoting safe, secure, and trustworthy AI worldwide.
-- **AI Verify:** Singapore’s AI Governance Testing Framework and Software toolkit that validates the performance of AI systems against a set of internationally recognised principles through standardised tests.
-- **Multilayer Framework for Good Cybersecurity Practices for AI — ENISA (europa.eu):** A framework to guide National Competent Authorities and AI stakeholders on the steps they need to follow to secure their AI systems, operations and processes.
-- **ISO 5338: AI system life cycle processes (Under review):** A set of processes and associated concepts for describing the life cycle of AI systems based on machine learning and heuristic systems.
-- **AI Cloud Service Compliance Criteria Catalogue (AIC4):** BSI’s AI Cloud Service Compliance Criteria Catalogue provides AI-specific criteria, which enable evaluation of the security of an AI service across its lifecycle.
-- **NIST IR 8269 (Draft) A Taxonomy and Terminology of Adversarial Machine Learning:** A set of processes and associated concepts for describing the life cycle of AI systems based on machine learning and heuristic systems.
-- **MITRE ATLAS:** A knowledge base of adversary tactics, techniques, and case studies for machine learning (ML) systems, modelled after and linked to MITRE ATT&CK framework.
-- **An Overview of Catastrophic AI Risks (2023):** Produced by the Center for AI Safety, this document sets out areas of risk posed by AI.
-- **Large Language Models: Opportunities and Risks for Industry and Authorities:** Document produced by BSI for companies, authorities and developers who want to learn more about the opportunities and risks of developing, deploying and/or using LLMs.
-- Open-source projects to help users security test AI models include:
+1. **Principles for the security of machine learning:** The NCSC’s detailed guidance on developing, deploying or operating a system with an ML component.
+2. **Secure by Design - Shifting the Balance of Cybersecurity Risk: Principles and Approaches for Secure by Design Software:** Co-authored by CISA, the NCSC and other agencies, this guidance describes how manufacturers of software systems, including AI, should take steps to factor security into the design stage of product development, and ship products that come secure out of the box.
+3. **AI Security Concerns in a Nutshell:** Produced by the German Federal Office for Information Security (BSI), this document provides an introduction to possible attacks on machine learning systems and potential defences against those attacks.
+4. **Hiroshima Process International Guiding Principles for Organizations Developing Advanced AI Systems and Hiroshima Process International Code of Conduct for Organizations Developing Advanced AI Systems:** These documents, produced as part of the G7 Hiroshima AI Process, provide guidance for organisations developing the most advanced AI systems, including the most advanced foundation models and generative AI systems with the aim of promoting safe, secure, and trustworthy AI worldwide.
+5. **AI Verify:** Singapore’s AI Governance Testing Framework and Software toolkit that validates the performance of AI systems against a set of internationally recognised principles through standardised tests.
+6. **Multilayer Framework for Good Cybersecurity Practices for AI — ENISA (europa.eu):** A framework to guide National Competent Authorities and AI stakeholders on the steps they need to follow to secure their AI systems, operations and processes.
+7. **ISO 5338: AI system life cycle processes (Under review):** A set of processes and associated concepts for describing the life cycle of AI systems based on machine learning and heuristic systems.
+8. **AI Cloud Service Compliance Criteria Catalogue (AIC4):** BSI’s AI Cloud Service Compliance Criteria Catalogue provides AI-specific criteria, which enable evaluation of the security of an AI service across its lifecycle.
+9. **NIST IR 8269 (Draft) A Taxonomy and Terminology of Adversarial Machine Learning:** A set of processes and associated concepts for describing the life cycle of AI systems based on machine learning and heuristic systems.
+10. **MITRE ATLAS:** A knowledge base of adversary tactics, techniques, and case studies for machine learning (ML) systems, modelled after and linked to MITRE ATT&CK framework.
+11. **An Overview of Catastrophic AI Risks (2023):** Produced by the Center for AI Safety, this document sets out areas of risk posed by AI.
+12. **Large Language Models: Opportunities and Risks for Industry and Authorities:** Document produced by BSI for companies, authorities and developers who want to learn more about the opportunities and risks of developing, deploying and/or using LLMs.
+13. Open-source projects to help users security test AI models include:
   - Adversarial Robustness Toolbox (IBM)
   - CleverHans (University of Toronto)
   - TextAttack (University of Virginia)

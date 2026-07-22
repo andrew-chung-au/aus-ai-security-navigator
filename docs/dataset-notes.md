@@ -6,17 +6,17 @@
 - An introduction to artificial intelligence
 - Engaging with artificial intelligence
 - AI data security
-- AI and ML supply chain risks and mitigations
+- Artificial intelligence and machine learning: Supply chain risks and mitigations
 - Guidelines for secure AI system development
 - Careful adoption of agentic AI services
-- Artificial intelligence for small business
+- Artificial intelligence for small business: Managing cyber security risks
 
 ### Attached PDFs in first build
 - Defending against AI-enabled cyber attacks – Guidance for small businesses
 - Defending against AI-enabled cyber attacks – Guidance for medium-sized businesses
 - Defending against AI-enabled cyber attacks – Guidance for government, critical infrastructure and large enterprises
 
-These core sources are all defined in `data/source_manifest_core.csv` with a normalized `audience_tag` field (for example `small_business`, `medium_business`, `large_enterprise_gov_critical`, `ai_system_provider`, `general_organisation`) that is propagated into the retrieval corpus.
+These core sources are defined in `data/source_manifest_core.csv`. The manifest includes a normalized `audience_tag` field (for example `small_business`, `medium_business`, `large_enterprise_gov_critical`, `ai_system_provider`, `general_organisation`) that is propagated into the retrieval corpus.
 
 ## Boundary sources
 
@@ -33,75 +33,158 @@ Operational technology (OT) guidance is excluded from the first build because it
 ## Formats and extraction
 
 - Core sources are ingested as HTML pages and attached PDFs.
-- All sources in the first build are converted into cleaned Markdown files after extraction.
-- The source manifest records `content_type` (HTML or PDF) so the extraction workflow can route each source to the appropriate extractor.
-- The mixed HTML/PDF corpus increases coverage, especially for operational and audience-specific questions, but requires format-specific extraction and cleanup.
+- All first-build sources are converted into local Markdown files after extraction.
+- The source manifest records `content_type` (`html` or `pdf`) so the workflow can route each source to the appropriate downloader and extractor.
+- The mixed HTML/PDF corpus improves coverage for audience-specific and topic-specific questions, but it also requires format-specific extraction and cleanup.
 
 ### Manual review
 
-Extraction is followed by a one-time manual review and correction step for the first corpus:
+Extraction is followed by a one-time manual review and correction step for the first corpus. This review is limited to extraction corrections rather than rewriting.
+
+Typical corrections include:
 
 - broken or missing headings
 - repeated headers, footers, or navigation text
 - duplicated paragraphs
 - missing or malformed lists
-- table structure and reading-order issues
+- table structure problems
+- PDF reading-order issues
 - other extraction noise that could harm retrieval
 
-Reviewed Markdown files are used as the basis for chunking and indexing.
+The reviewed Markdown files form the cleaned corpus used for chunking, embedding, and retrieval.
 
 ## Audience-aware corpus
 
 The project treats ACSC AI guidance as an audience-aware corpus:
 
-- Many documents are explicitly segmented for small businesses, medium-sized businesses, or government/critical infrastructure/large enterprises.
-- Additional guidance targets AI system providers and general organisations using AI systems.
+- Some documents are explicitly written for small businesses, medium-sized businesses, or government, critical infrastructure, and large enterprises.
+- Other documents are better understood as guidance for AI system providers or general organisations adopting or using AI systems.
 
-The `audience_tag` field in `data/source_manifest_core.csv` captures this segmentation at the document level and is copied into every chunk in the retrieval corpus so that:
+The `audience_tag` field in `data/source_manifest_core.csv` captures this segmentation at the document level and is copied into each chunk in the retrieval corpus. This supports:
 
-- queries can be evaluated for audience-specific behaviour
-- answers can be grounded in guidance that matches the organisation type
+- audience-aware retrieval and filtering
+- evaluation of audience-specific queries
+- source-grounded answers that better match organisation type
 
-## Chunk schema
+## Retrieval-ready corpus
 
-The first retrieval-ready corpus will be written to:
+The first retrieval-ready corpus is written to:
 
 - `data/chunks/chunks.jsonl`
 
-Each line in `data/chunks/chunks.jsonl` represents one chunk as a JSON object with the following minimum schema:
+Each line in `data/chunks/chunks.jsonl` represents one chunk as a JSON object.
+
+### Minimum chunk schema
+
+The minimum chunk schema for the first build is:
 
 - `source_file` – the cleaned Markdown filename for the source document
 - `document_title` – the document title, usually taken from the top-level `#` heading
 - `heading_path` – the heading hierarchy for the chunk, stored as an ordered path from section to subsection
 - `audience_tag` – the normalized audience label copied from `data/source_manifest_core.csv`
-- `chunk_text` – the text content of the chunk used for retrieval and embedding
+- `chunk_text` – the text content used for embedding and retrieval
 
-This minimal schema is intended to preserve provenance and audience context without adding unnecessary complexity in the first build.
+This schema is intentionally minimal. It preserves provenance, section context, and audience metadata without adding unnecessary complexity in the first build.
 
-## Chunking and tables
+During development, the chunking script may also emit diagnostic metrics such as chunk word count, character count, or line count to help inspect chunk sizes. These are treated as diagnostics rather than part of the core retrieval schema.
 
-When preparing the retrieval-ready corpus from cleaned Markdown:
+## Chunking approach
 
-- Chunking is heading-aware: each chunk is anchored to a document title and a heading path rather than being split only by fixed size.
-- Bullet lists under a heading should be kept intact in a single chunk rather than split mid-list.
-- Risk and mitigation sections that naturally pair (for example, a risk subsection followed immediately by a mitigation subsection) can be kept in one chunk to preserve context.
-- If a heading section is too large, it can be split by paragraph while preserving the same `heading_path`.
+The cleaned Markdown corpus is chunked using a heading-aware approach rather than document-wide fixed-size windows. Markdown headings, lists, and tables are treated as meaningful structural boundaries and are preserved where practical.
 
-Tables are treated as special chunks because generic splitting can damage their structure and reduce retrieval quality.
+This approach is intended to:
+
+- preserve document structure and semantic boundaries
+- keep related material together
+- reduce the risk of splitting lists, tables, or paired risk/mitigation content in unhelpful ways
+
+### General rules
+
+- Headings define the primary chunk boundaries.
+- Chunks are anchored to the document title and `heading_path`.
+- Headings are not stored as standalone chunks; they are attached to the content beneath them.
+- Where useful for retrieval, the heading breadcrumb may be prepended to `chunk_text` before embedding.
+- Very large sections may be split further when structure provides a natural boundary.
+
+### Enumerated sections
+
+Some sections contain long top-level numbered recommendations or best-practice lists. Where these lists are large enough to create overly broad chunks, they are split into smaller item-level chunks.
+
+In these cases:
+
+- any introductory text before the list may remain as its own chunk
+- each numbered item becomes its own chunk
+- the numbered item title is appended to `heading_path`
+
+This is used to preserve the semantic focus of enumerated guidance without falling back to arbitrary fixed-size windows.
+
+### Lists
+
+- Bullet lists and numbered lists should be kept intact where practical rather than split mid-list.
+- Nested lists should remain attached to their parent list item.
+- Action-oriented checklist sections are treated as cohesive chunk units unless there is a strong structural reason to split them.
+
+### Risk and mitigation pairings
+
+Some documents use repeated patterns where a risk heading is followed by a mitigation or `Managing risks` subsection. These are treated as a single logical unit where possible so that the problem and the recommended response remain together.
+
+Examples in the first build include:
+
+- `ai-small-business.md` – risk sections paired with `Managing risks`
+- `ai-data-security.md` – risk headings paired with mitigation content
+- `engaging-with-ai.md` – threat sections paired with case studies
+- `agentic-ai-adoption.md` – risk or security domains paired with scenario examples and recommended best practices
+
+### Tables
+
+Tables are treated as special chunks because naive splitting can damage structure and reduce retrieval quality.
 
 For tables:
 
-- small or medium tables should be kept as a single chunk with the surrounding heading context.
-- larger tables may be split by rows only if necessary, with column headers repeated in each split chunk.
-- where Markdown tables are awkward for retrieval, they may be converted into readable row-wise text while preserving the heading context.
+- small or medium tables should usually remain as a single chunk under the surrounding heading context
+- larger tables may be split only when necessary
+- when a table is split, row-wise text should preserve the relevant heading context and, where needed, the column meaning
+- manual cleanup may reposition or relabel a table within a section when this better reflects the original structure and improves chunking, provided the meaning is unchanged
 
-These chunking rules are documented here to make the retrieval corpus design explicit and to support evaluation of how structure-aware chunking affects retrieval quality.
+Examples in the first build include:
+
+- the AI system lifecycle table in `ai-data-security.md`
+- the glossary table in `ai-small-business.md`
+
+## Document-specific patterns
+
+Some source documents have recurring structures that the chunking process should preserve.
+
+### AI-enabled cyber attack PDF guides
+These guides are mostly structured as a document title plus time- or action-based sections. Each major section should generally stay intact with its associated action bullets.
+
+### Guidelines for secure AI system development
+Development life cycle phases contain related principles and action items. These should remain tied to their parent phase context.
+
+### Careful adoption of agentic AI services
+Risk and security domains contain nested scenario examples and recommended best practices. These blocks should remain grouped under the relevant parent heading where practical.
+
+### Artificial intelligence and machine learning: Supply chain risks and mitigations
+Domain sections contain nested risks, mitigations, and supporting material. These should be chunked with their parent domain context preserved.
+
+## Current first-build status
+
+For the first build:
+
+- the dataset is manifest-defined in `data/source_manifest_core.csv`
+- source files are downloaded into raw HTML and PDF folders based on `content_type`
+- extracted content is manually reviewed into cleaned Markdown
+- the cleaned Markdown corpus is chunked into `data/chunks/chunks.jsonl`
+- each chunk carries `audience_tag` from the manifest
+- heading-aware chunking is implemented
+- long enumerated sections can be split into item-level chunks where needed
 
 ## Summary
 
-- The first index build includes core ACSC AI HTML guidance pages and three attached PDFs on defending against AI-enabled cyber attacks.
-- Boundary sources are kept for future expansion but excluded from the first version.
-- Sources are extracted and cleaned into Markdown, with manual corrections for structural issues.
-- Audience tags are defined deterministically at the document level and propagated into the retrieval corpus.
-- The first retrieval-ready corpus will be stored as `data/chunks/chunks.jsonl`.
-- Chunking rules emphasize heading-aware splits, intact lists, and special handling of tables.
+- The first index build uses a curated ACSC AI guidance corpus consisting of core HTML pages and three audience-specific PDF guides.
+- Boundary sources are retained for possible later expansion but excluded from the first build.
+- Sources are extracted and cleaned into Markdown, with a documented manual correction step for structural issues.
+- Audience tags are defined deterministically in the manifest and propagated into the chunked corpus.
+- The first retrieval-ready corpus is stored as `data/chunks/chunks.jsonl`.
+- Chunking is structure-aware and preserves headings, lists, tables, and risk/mitigation relationships where practical.
+- Long enumerated guidance sections may be split into item-level chunks when that improves retrieval focus.

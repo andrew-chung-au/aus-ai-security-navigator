@@ -163,65 +163,65 @@ Ensure that your organisation’s incident response plan accounts for issues ari
 
 ## Further Reading
 
-**ASD's Cyber supply chain risk management**
+1. **ASD's Cyber supply chain risk management**
 Guidance published by ASD to help organisations manage risk in their cyber supply chain.
 
-**ASD’s Essential Eight**
+2. **ASD’s Essential Eight**
 ASD has developed prioritised mitigation strategies, in the form of the Strategies to mitigate cyber security incidents, to help organisations protect themselves against various cyber threats. The most effective of these mitigation strategies are the Essential Eight. The Essential Eight has been designed to protect organisations’ internet-connected information technology networks.
 
-**ASD's Ethical AI framework**
+3. **ASD's Ethical AI framework**
 ASD has developed a framework that incorporates a set of ethical principles which govern how AI is used at ASD.
 
-**ASD's Information security manual**
+4. **ASD's Information security manual**
 ASD produces the Information security manual (ISM). The purpose of the ISM is to outline a cyber security framework that an organisation can apply, using their risk management framework, to protect their systems and data from cyber threats. The ISM is intended for chief information security officers, chief information officers, cyber security professionals and information technology managers.
 
-**BSI’s AI Cloud Service Compliance Criteria Catalogue (AIC4)**
+5. **BSI’s AI Cloud Service Compliance Criteria Catalogue (AIC4)**
 BSI’s AI Cloud Compliance Criteria Catalogue provides AI-specific criteria, which enable evaluation of the security of an AI service across its lifecycle.
 
-**BSI’s Large Language Models: Opportunities and Risks for Industry and Authorities**
+6. **BSI’s Large Language Models: Opportunities and Risks for Industry and Authorities**
 Document produced by BSI for companies, authorities and developers who want to learn more about the opportunities and risks of developing, deploying and/or using LLMs.
 
-**CCCS Principles for responsible, trustworthy and privacy-protective generative AI technologies**
+7. **CCCS Principles for responsible, trustworthy and privacy-protective generative AI technologies**
 The Office of the Privacy Commissioner of Canada has published guidance to help organisations developing, providing or using generative AI to apply key Canadian privacy principles.
 
-**CERT NZ’s Top online security tips for your business**
+8. **CERT NZ’s Top online security tips for your business**
 Guidance that includes cyber security mitigation strategies as well as why they matter and how to implement them.
 
-**Hiroshima AI Process Comprehensive Policy Framework**
+9. **Hiroshima AI Process Comprehensive Policy Framework**
 This is the first international framework that includes guiding principles and a code of conduct aimed at promoting the safe, secure and trustworthy development of advanced AI systems. The policy framework was successfully agreed upon at the G7 Digital & Tech Ministers’ Meeting in December 2023 and was endorsed by the G7 Leaders in the same month.
 The Hiroshima AI Process was launched in May 2023, following the Leaders’ direction at the G7 Hiroshima Summit in Japan.
 
-**MITRE ATLAS**
+10. **MITRE ATLAS**
 MITRE ATLAS™ (Adversarial Threat Landscape for Artificial-Intelligence Systems) is a globally accessible, living knowledge base of adversary tactics and techniques based on real-world attack observations and realistic demonstrations from AI red teams and security groups.
 
-**NIST Adversarial Machine Learning: A Taxonomy and Terminology of Attacks and Mitigations**
+11. **NIST Adversarial Machine Learning: A Taxonomy and Terminology of Attacks and Mitigations**
 This NIST report on AI develops a taxonomy of attacks and mitigations and defines terminology in the field of adversarial machine learning. Taken together, the taxonomy and terminology are meant to inform other standards and future practice guides for assessing and managing the security of AI systems by establishing a common language for understanding the rapidly developing adversarial machine learning landscape.
 
-**NIST AI Risk Management Framework**
+12. **NIST AI Risk Management Framework**
 In collaboration with the private and public sectors, NIST has developed a framework to better manage risks to individuals, organizations, and society associated with AI. It is intended for voluntary use and to improve the ability to incorporate trustworthiness considerations into the design, development, use, and evaluation of AI products, services, and systems.
 
-**NIST Cybersecurity Framework**
+13. **NIST Cybersecurity Framework**
 The NIST Cybersecurity Framework consists of standards, guidelines and best practices to manage cyber security risk. It is comprised of three parts: the Framework Core, the Framework Implementation Tiers, and the Framework Profiles. Each framework component reinforces the connection between business/mission drivers and cyber security activities.
 
-**NCSC NZ Cyber Security Framework**
+14. **NCSC NZ Cyber Security Framework**
 NCSC NZ’s cyber security framework sets out how NCSC NZ thinks, talks about, and organises its cyber security efforts. Its five functions and twenty-five security objectives represent the breadth of work needed to secure an organisation in New Zealand.
 
-**NCSC-NZ Interim Generative AI guidance for the public service**
+15. **NCSC-NZ Interim Generative AI guidance for the public service**
 The New Zealand Government has published interim guidance on the use of generative AI in the public service. The guidance includes 10 “do’s” for trustworthy use of generative AI in the public service.
 
-**NCSC-UK 10 Steps to Cyber Security**
+16. **NCSC-UK 10 Steps to Cyber Security**
 The NCSC-UK's 10 steps to cyber security provides a summary of the NCSC-UK's advice for medium to large organisations. It aims to help organisations manage their cyber security risks by breaking down the task of protecting the organisation into 10 components.
 
-**NCSC-UK Guidelines for secure AI system development**
+17. **NCSC-UK Guidelines for secure AI system development**
 Guidelines co-sealed by Australia, Canada, New Zealand, the United Kingdom, the United States and a number of international partners for providers of any systems that use artificial intelligence (AI), whether those systems have been created from scratch or built on top of tools and services provided by others.
 
-**NCSC-UK Principles for the security of machine learning**
+18. **NCSC-UK Principles for the security of machine learning**
 These principles aim to be wide reaching and applicable to anyone developing, deploying or operating a system with a machine learning (ML) component. They are not a comprehensive assurance framework to grade a system or workflow, and do not provide a checklist. Instead, they provide context and structure to help scientists, engineers, decision makers and risk owners make educated decisions about system design and development processes, helping to assess the specific threats to a system.
 
-**OWASP Machine Learning Security Top 10**
+19. **OWASP Machine Learning Security Top 10**
 The OWASP Machine Learning Security Top 10 project delivers an overview of the top 10 security issues relating to machine learning systems.
 
-**US Department of Defense 2023 Data, Analytics, and Artificial Intelligence Adoption Strategy**
+20. **US Department of Defense 2023 Data, Analytics, and Artificial Intelligence Adoption Strategy**
 This strategy’s approach embraces the need for speed, agility, learning, and responsibility. Pursuing this agile approach and focusing activities on the goals outlined in this strategy will allow the US Department of Defense to adopt data, analytics, and AI-enabled capabilities at the pace and scale required to build enduring decision advantage.
 
 ## Footnotes

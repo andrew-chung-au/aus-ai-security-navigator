@@ -30,9 +30,13 @@ This CSI outlines potential risks in AI systems stemming from data security issu
 
 ## Securing data throughout the AI system lifecycle
 
-Data security is a critical enabler that spans all phases of the AI system lifecycle. ML models learn their decision logic from data, so an attacker who can manipulate the data can also manipulate the logic of an AI-based system. In the AI Risk Management Framework (RMF) [3], the National Institute of Standards and Technology (NIST) defines six major stages in the lifecycle of AI systems, starting from Plan & Design and progressing all the way to Operate & Monitor. The following table highlights relevant data security factors for each stage of the AI lifecycle:
+Data security is a critical enabler that spans all phases of the AI system lifecycle. ML models learn their decision logic from data, so an attacker who can manipulate the data can also manipulate the logic of an AI-based system. In the AI Risk Management Framework (RMF) [3], the National Institute of Standards and Technology (NIST) defines six major stages in the lifecycle of AI systems, starting from Plan & Design and progressing all the way to Operate & Monitor. The table below highlights relevant data security factors for each stage of the AI lifecycle.
 
-*Table 1: The AI System Lifecycle with key dimensions, necessary ongoing assessments, focus areas for data security, and particular data security risks covered in this CSI. [3]*
+Throughout the AI system lifecycle, securing data is paramount to maintaining information integrity and system reliability. Starting with the initial Plan & Design phase, carefully plan data protection measures to provide proactive mitigations of potential risks. In the Collect & Process Data phase, data must be carefully analyzed, labeled, sanitized, and protected from breaches and tampering. Securing data in the Build & Use Model phase helps ensure models are trained on reliably sourced, accurate, and representative information. In the Verify & Validate phase, comprehensive and thorough testing of AI models, derived from training data, can identify security flaws and enable their mitigation.
+
+Note that Verification & Validation is necessary each time new data or user feedback is introduced into the model; therefore, that data also needs to be handled with the same security standards as AI training data. Implementing strict access controls protects data from unauthorized access, especially in the Deploy & Use phase. Lastly, continuous data risk assessments in the Operate & Monitor phase are necessary to adapt to evolving threats. Neglecting these practices can lead to data corruption, compromised models, data leaks, and non-compliance, emphasizing the critical importance of robust data security at every phase.
+
+### Table 1: The AI System Lifecycle with key dimensions, necessary ongoing assessments, focus areas for data security, and particular data security risks covered in this CSI. [3]
 | AI Lifecycle Stage | Key Dimensions | Test, Evaluation, Verification, & Validation (TEVV) | Potential Focus Areas for Data Security | Particular Data Security Risks Covered in this CSI |
 | :--- | :--- | :--- | :--- | :--- |
 | 1) Plan & Design | Application Context | Audit & Impact Assessment | Incorporating data security measures from inception, designing robust security protocols, threat modeling, and including privacy by design | Data supply chain |
@@ -41,10 +45,6 @@ Data security is a critical enabler that spans all phases of the AI system lifec
 | 4) Verify & Validate | AI Model | Model Testing | Performing comprehensive security testing, identifying and mitigating risks, validating data integrity, adversarial testing, and formal verification when appropriate and possible | Data supply chain, maliciously modified data |
 | 5) Deploy & Use | Task & Output | Integration, Compliance Testing, Validation | Implementing strict access controls, zero-trust infrastructure, secure data transmission and storage, secure API endpoints, and monitoring for anomalous behavior | Data supply chain, maliciously modified data, data drift |
 | 6) Operate & Monitor | Application Context | Audit & Impact Assessment | Conducting continuous risk assessments, monitoring for data breaches, deleting data securely, complying with regulations, incident response planning, and regular security auditing | Data supply chain, maliciously modified data, data drift |
-
-Throughout the AI system lifecycle, securing data is paramount to maintaining information integrity and system reliability. Starting with the initial Plan & Design phase, carefully plan data protection measures to provide proactive mitigations of potential risks. In the Collect & Process Data phase, data must be carefully analyzed, labeled, sanitized, and protected from breaches and tampering. Securing data in the Build & Use Model phase helps ensure models are trained on reliably sourced, accurate, and representative information. In the Verify & Validate phase, comprehensive and thorough testing of AI models, derived from training data, can identify security flaws and enable their mitigation.
-
-Note that Verification & Validation is necessary each time new data or user feedback is introduced into the model; therefore, that data also needs to be handled with the same security standards as AI training data. Implementing strict access controls protects data from unauthorized access, especially in the Deploy & Use phase. Lastly, continuous data risk assessments in the Operate & Monitor phase are necessary to adapt to evolving threats. Neglecting these practices can lead to data corruption, compromised models, data leaks, and non-compliance, emphasizing the critical importance of robust data security at every phase.
 
 ## Best practices to secure data for AI-based systems
 
@@ -99,19 +99,19 @@ The use of web-scale databases includes all of the risks outlined earlier, and o
 
 From the moment data is ingested for use with AI systems, the data acquirer must secure it against insider threats and malicious network activity to prevent unauthorized modification.
 
-Mitigation strategies:
-
-- Dataset verification: Before ingest, the consumer or curator should verify, as much as possible, that the dataset to be ingested is free of malicious or inaccurate material. Any detected abnormalities should be addressed, and suspicious data should not be stored. The dataset verification process should include a digital signature of the dataset at time of ingestion.
-
-- Content credentials: Use content credentials to track the provenance of media and other data. Content credentials are “metadata that are secured cryptographically and allow creators the ability to add information about themselves or their creative process, or both, directly to media content…. Content Credentials securely bind essential metadata to a media file that can track its origin(s), any edits made, and/or what was used to create or modify the content…. This metadata alone does not allow a consumer to determine whether a piece of content is ‘true,’ but rather provides contextual information that assists in determining the authenticity of the content.” [24]
-
-- Foundation model assurances: In the case where a consumer is not ingesting a dataset, but a foundation model trained by another party, the developers of the foundation model need to be able to provide assurances regarding the data and sources used, and certify that their training data did not contain any known compromised data. Take care to track the training data used in various model lineages. Exercise caution before using a model without such assurances.
-
-- Require certification: Data consumers should strongly consider requiring a formal certification from dataset and model providers, attesting that their systems are free from known compromised data before using third-party data and/or foundation models.
-
-- Secure storage: After ingest, data needs to be stored in a database that adheres to the best practices for digital signatures, data integrity, and data provenance that are described in detail above. Note that an append-only cryptographically signed database should be used where feasible, but there may be a need to delete older material that is no longer relevant. Each time a data element is updated (e.g., resized, cropped, flipped, etc.) for augmentation purposes in a non-temporary fashion, then the updated data should be stored as a new entry with documented changes. The database’s certificate should be verified at the time the database is accessed for a training run. If the database does not pass the certificate check, abort the training and conduct a comprehensive database audit to discover any data modifications.
-
 2023 investigations by various industry professionals explored low-resource methods for introducing malicious or inaccurate material into web-scale datasets, and potential strategies to mitigate this risk. [29] These vulnerabilities depend on the fact that curators or collectors do not have control over the data, as seen in cases of datasets curated by third parties (e.g., LAION) or datasets that are continually updated and released (e.g., Wikipedia).
+
+#### Mitigation strategies:
+
+1. Dataset verification: Before ingest, the consumer or curator should verify, as much as possible, that the dataset to be ingested is free of malicious or inaccurate material. Any detected abnormalities should be addressed, and suspicious data should not be stored. The dataset verification process should include a digital signature of the dataset at time of ingestion.
+
+2. Content credentials: Use content credentials to track the provenance of media and other data. Content credentials are “metadata that are secured cryptographically and allow creators the ability to add information about themselves or their creative process, or both, directly to media content…. Content Credentials securely bind essential metadata to a media file that can track its origin(s), any edits made, and/or what was used to create or modify the content…. This metadata alone does not allow a consumer to determine whether a piece of content is ‘true,’ but rather provides contextual information that assists in determining the authenticity of the content.” [24]
+
+3. Foundation model assurances: In the case where a consumer is not ingesting a dataset, but a foundation model trained by another party, the developers of the foundation model need to be able to provide assurances regarding the data and sources used, and certify that their training data did not contain any known compromised data. Take care to track the training data used in various model lineages. Exercise caution before using a model without such assurances.
+
+4. Require certification: Data consumers should strongly consider requiring a formal certification from dataset and model providers, attesting that their systems are free from known compromised data before using third-party data and/or foundation models.
+
+5. Secure storage: After ingest, data needs to be stored in a database that adheres to the best practices for digital signatures, data integrity, and data provenance that are described in detail above. Note that an append-only cryptographically signed database should be used where feasible, but there may be a need to delete older material that is no longer relevant. Each time a data element is updated (e.g., resized, cropped, flipped, etc.) for augmentation purposes in a non-temporary fashion, then the updated data should be stored as a new entry with documented changes. The database’s certificate should be verified at the time the database is accessed for a training run. If the database does not pass the certificate check, abort the training and conduct a comprehensive database audit to discover any data modifications.
 
 ### Risk: Curated web-scale datasets
 
@@ -273,73 +273,73 @@ Data security is an ever-evolving field, and continuous vigilance and adaptation
 
 ## Works cited
 
-- Office of the Director of National Intelligence. The Intelligence Community Data Management Lexicon. 2024. https://dni.gov/files/ODNI/documents/IC_Data_Management_Lexicon.pdf
+1. Office of the Director of National Intelligence. The Intelligence Community Data Management Lexicon. 2024. https://dni.gov/files/ODNI/documents/IC_Data_Management_Lexicon.pdf
 
-- National Security Agency et al. Deploying AI Systems Securely: Best Practices for Deploying Secure and Resilient AI Systems. 2024. https://media.defense.gov/2024/Apr/15/2003439257/-1/-1/0/CSI-DEPLOYING-AI-SYSTEMS-SECURELY.PDF
+2. National Security Agency et al. Deploying AI Systems Securely: Best Practices for Deploying Secure and Resilient AI Systems. 2024. https://media.defense.gov/2024/Apr/15/2003439257/-1/-1/0/CSI-DEPLOYING-AI-SYSTEMS-SECURELY.PDF
 
-- National Institute of Standards and Technology (NIST). NIST AI 100-1: Artificial Intelligence Risk Management Framework (AI RMF 1.0). 2023. https://doi.org/10.6028/NIST.AI.100-1
+3. National Institute of Standards and Technology (NIST). NIST AI 100-1: Artificial Intelligence Risk Management Framework (AI RMF 1.0). 2023. https://doi.org/10.6028/NIST.AI.100-1
 
-- NIST. NIST Special Publication 800-37 Rev. 2: Guide for Applying the Risk Management Framework to Federal Information Systems. 2018. https://doi.org/10.6028/NIST.SP.800-37r2
+4. NIST. NIST Special Publication 800-37 Rev. 2: Guide for Applying the Risk Management Framework to Federal Information Systems. 2018. https://doi.org/10.6028/NIST.SP.800-37r2
 
-- NIST. Federal Information Processing Standards Publication (FIPS) 204: Module-Lattice-Based Digital Signature Standard. 2024. https://doi.org/10.6028/NIST.FIPS.204
+5. NIST. Federal Information Processing Standards Publication (FIPS) 204: Module-Lattice-Based Digital Signature Standard. 2024. https://doi.org/10.6028/NIST.FIPS.204
 
-- NIST. FIPS 205: Stateless Hash-Based Digital Signature Standard. 2024. https://doi.org/10.6028/NIST.FIPS.205
+6. NIST. FIPS 205: Stateless Hash-Based Digital Signature Standard. 2024. https://doi.org/10.6028/NIST.FIPS.205
 
-- Bommasani, R. et al. On the Opportunities and Risks of Foundation Models. arXiv:2108.07258v3. 2022. https://arxiv.org/abs/2108.07258v3
+7. Bommasani, R. et al. On the Opportunities and Risks of Foundation Models. arXiv:2108.07258v3. 2022. https://arxiv.org/abs/2108.07258v3
 
-- Securing Artificial Intelligence (SAI); Data Supply Chain Security. ESTI GR SAI 002 V1.1.1. 2021. https://etsi.org/deliver/etsi_gr/SAI/001_099/002/01.01.01_60/gr_SAI002v010101p.pdf
+8. Securing Artificial Intelligence (SAI); Data Supply Chain Security. ESTI GR SAI 002 V1.1.1. 2021. https://etsi.org/deliver/etsi_gr/SAI/001_099/002/01.01.01_60/gr_SAI002v010101p.pdf
 
-- National Cyber Security Centre et al. Guidelines for Secure AI System Development. 2023. https://www.ncsc.gov.uk/files/Guidelines-for-secure-AI-system-development.pdf
+9. National Cyber Security Centre et al. Guidelines for Secure AI System Development. 2023. https://www.ncsc.gov.uk/files/Guidelines-for-secure-AI-system-development.pdf
 
-- NIST. NIST Special Publication 800-207: Zero Trust Architecture. 2020. https://doi.org/10.6028/NIST.SP.800-207
+10. NIST. NIST Special Publication 800-207: Zero Trust Architecture. 2020. https://doi.org/10.6028/NIST.SP.800-207
 
-- NIST. NIST IR 8496 ipd: Data Classification Concepts and Considerations for Improving Data Protection. 2023. https://doi.org/10.6028/NIST.IR.8496.ipd
+11. NIST. NIST IR 8496 ipd: Data Classification Concepts and Considerations for Improving Data Protection. 2023. https://doi.org/10.6028/NIST.IR.8496.ipd
 
-- Cybersecurity and Infrastructure Security Agency (CISA), NSA, and NIST. Quantum-Readiness: Migration to Post-Quantum Cryptography. 2023. https://www.cisa.gov/resources-tools/resources/quantum-readiness-migration-post-quantum-cryptography
+12. Cybersecurity and Infrastructure Security Agency (CISA), NSA, and NIST. Quantum-Readiness: Migration to Post-Quantum Cryptography. 2023. https://www.cisa.gov/resources-tools/resources/quantum-readiness-migration-post-quantum-cryptography
 
-- NIST. FIPS 203: Module-Lattice-Based Key-Encapsulation Mechanism Standard. 2024. https://doi.org/10.6028/NIST.FIPS.203
+13. NIST. FIPS 203: Module-Lattice-Based Key-Encapsulation Mechanism Standard. 2024. https://doi.org/10.6028/NIST.FIPS.203
 
-- NIST. NIST SP 800-52 Rev. 2: Guidelines for the Selection, Configuration, and Use of Transport Layer Security (TLS) Implementations. 2019. https://doi.org/10.6028/NIST.SP.800-52r2
+14. NIST. NIST SP 800-52 Rev. 2: Guidelines for the Selection, Configuration, and Use of Transport Layer Security (TLS) Implementations. 2019. https://doi.org/10.6028/NIST.SP.800-52r2
 
-- NIST. FIPS 140-3, Security Requirements for Cryptographic Modules. 2019. https://doi.org/10.6028/NIST.FIPS.140-3
+15. NIST. FIPS 140-3, Security Requirements for Cryptographic Modules. 2019. https://doi.org/10.6028/NIST.FIPS.140-3
 
-- NIST. FIPS 140-2, Security Requirements for Cryptographic Modules. 2001. https://doi.org/10.6028/NIST.FIPS.140-2
+16. NIST. FIPS 140-2, Security Requirements for Cryptographic Modules. 2001. https://doi.org/10.6028/NIST.FIPS.140-2
 
-- NIST. NIST AI 100-2e2023: Trustworthy and Responsible AI, Adversarial Machine Learning: A Taxonomy and Terminology of Attacks and Mitigations. 2024. https://doi.org/10.6028/NIST.AI.100-2e2023
+17. NIST. NIST AI 100-2e2023: Trustworthy and Responsible AI, Adversarial Machine Learning: A Taxonomy and Terminology of Attacks and Mitigations. 2024. https://doi.org/10.6028/NIST.AI.100-2e2023
 
-- Adak, M. F., Kose, Z. N., & Akpinar, M. Dynamic Data Masking by Two-Step Encryption. In 2023 Innovations in Intelligent Systems and Applications Conference (ASYU) (pp. 1-5). IEEE. 2023 https://doi.org/10.1109/ASYU58738.2023.10296545
+18. Adak, M. F., Kose, Z. N., & Akpinar, M. Dynamic Data Masking by Two-Step Encryption. In 2023 Innovations in Intelligent Systems and Applications Conference (ASYU) (pp. 1-5). IEEE. 2023 https://doi.org/10.1109/ASYU58738.2023.10296545
 
-- Kairouz, P. et al. Advances and Open Problems in Federated Learning. Foundations and Trends in Machine Learning 14 (1-2): 1-210. arXiv:1912.04977. 2021. https://arxiv.org/abs/1912.04977
+19. Kairouz, P. et al. Advances and Open Problems in Federated Learning. Foundations and Trends in Machine Learning 14 (1-2): 1-210. arXiv:1912.04977. 2021. https://arxiv.org/abs/1912.04977
 
-- NIST. NIST SP 800-88 Rev. 1: Guidelines for Media Sanitization. 2014. https://doi.org/10.6028/NIST.SP.800-88r1
+20. NIST. NIST SP 800-88 Rev. 1: Guidelines for Media Sanitization. 2014. https://doi.org/10.6028/NIST.SP.800-88r1
 
-- NIST. NIST Special Publication 800-3 Rev. 2: Risk Management Framework for Information Systems and Organizations: A System Life Cycle Approach for Security and Privacy. 2018. https://doi.org/10.6028/NIST.SP.800-37r2
+21. NIST. NIST Special Publication 800-3 Rev. 2: Risk Management Framework for Information Systems and Organizations: A System Life Cycle Approach for Security and Privacy. 2018. https://doi.org/10.6028/NIST.SP.800-37r2
 
-- U.S. Department of Homeland Security. Preparedness Series June 2023: Risks and Mitigation Strategies for Adversarial Artificial Intelligence Threats: A DHS S&T Study. 2023. https://www.dhs.gov/sites/default/files/2023-12/23_1222_st_risks_mitigation_strategies.pdf
+22. U.S. Department of Homeland Security. Preparedness Series June 2023: Risks and Mitigation Strategies for Adversarial Artificial Intelligence Threats: A DHS S&T Study. 2023. https://www.dhs.gov/sites/default/files/2023-12/23_1222_st_risks_mitigation_strategies.pdf
 
-- Bender, E. M., & Friedman, B. Data Statements for Natural Language Processing: Toward Mitigating System Bias and Enabling Better Science. Transactions of the Association for Computational Linguistics (TACL) 6, 587–604. 2018. https://doi.org/10.1162/tacl_a_00041
+23. Bender, E. M., & Friedman, B. Data Statements for Natural Language Processing: Toward Mitigating System Bias and Enabling Better Science. Transactions of the Association for Computational Linguistics (TACL) 6, 587–604. 2018. https://doi.org/10.1162/tacl_a_00041
 
-- NSA et al. Content Credentials: Strengthening Multimedia Integrity in the Generative AI Era. 2025. https://media.defense.gov/2025/Jan/29/2003634788/-1/-1/0/CSI-CONTENT-CREDENTIALS.PDF
+24. NSA et al. Content Credentials: Strengthening Multimedia Integrity in the Generative AI Era. 2025. https://media.defense.gov/2025/Jan/29/2003634788/-1/-1/0/CSI-CONTENT-CREDENTIALS.PDF
 
-- Executive Order (EO) 14179: “Removing Barriers to American Leadership in Artificial Intelligence” https://www.federalregister.gov/executive-order/14179
+25. Executive Order (EO) 14179: “Removing Barriers to American Leadership in Artificial Intelligence” https://www.federalregister.gov/executive-order/14179
 
-- NIST. NIST Special Publication 1270: Framework for Identifying and Managing Bias in Artificial Intelligence. 2023. https://doi.org/10.6028/NIST.SP.1270
+26. NIST. NIST Special Publication 1270: Framework for Identifying and Managing Bias in Artificial Intelligence. 2023. https://doi.org/10.6028/NIST.SP.1270
 
-- NIST. NIST AI 600-1: Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile. 2023. https://doi.org/10.6028/NIST.AI.600-1
+27. NIST. NIST AI 600-1: Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile. 2023. https://doi.org/10.6028/NIST.AI.600-1
 
-- Open Web Application Security Project (OWASP). AI Exchange. https://owaspai.org/goto/moretraindata/
+28. Open Web Application Security Project (OWASP). AI Exchange. https://owaspai.org/goto/moretraindata/
 
-- Carlini, N. et al. Poisoning Web-Scale Training Datasets is Practical. arXiv:2302.10149. 2023. https://arxiv.org/abs/2302.10149
+29. Carlini, N. et al. Poisoning Web-Scale Training Datasets is Practical. arXiv:2302.10149. 2023. https://arxiv.org/abs/2302.10149
 
-- Kore, A., Abbasi Bavil, E., Subasri, V., Abdalla, M., Fine, B., Dolatabadi, E., & Abdalla, M. Empirical Data Drift Detection Experiments on Real-World Medical Image Data. Nature Communications 15, 1887. 2024. https://doi.org/10.1038/s41467-024-46142-w
+30. Kore, A., Abbasi Bavil, E., Subasri, V., Abdalla, M., Fine, B., Dolatabadi, E., & Abdalla, M. Empirical Data Drift Detection Experiments on Real-World Medical Image Data. Nature Communications 15, 1887. 2024. https://doi.org/10.1038/s41467-024-46142-w
 
-- NIST. NIST Special Publication 800-208: Recommendation for Stateful Hash-Based Signature Schemes. 2020. https://doi.org/10.6028/NIST.SP.800-208
+31. NIST. NIST Special Publication 800-208: Recommendation for Stateful Hash-Based Signature Schemes. 2020. https://doi.org/10.6028/NIST.SP.800-208
 
-- The Organisation for Economic Cooperation and Development (OECD). Glossary of statistical terms. 2008. https://doi.org/10.1787/9789264055087-en
+32. The Organisation for Economic Cooperation and Development (OECD). Glossary of statistical terms. 2008. https://doi.org/10.1787/9789264055087-en
 
-- NIST. NIST SP 800-53 Rev. 5: Security and Privacy Controls for Information Systems and Organizations. 2020. https://doi.org/10.6028/NIST.SP.800-53r5
+33. NIST. NIST SP 800-53 Rev. 5: Security and Privacy Controls for Information Systems and Organizations. 2020. https://doi.org/10.6028/NIST.SP.800-53r5
 
-- OWASP. AI Exchange. How to select relevant threats and controls? risk analysis. https://owaspai.org/goto/riskanalysis/
+34. OWASP. AI Exchange. How to select relevant threats and controls? risk analysis. https://owaspai.org/goto/riskanalysis/
 
 ### Disclaimer of Endorsement
 
