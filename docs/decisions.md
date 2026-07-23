@@ -424,3 +424,60 @@ Keeping only text search would simplify the system but leave significant retriev
   - reports strict and relaxed Hit@k and MRR metrics for text and vector retrieval side-by-side,
   - shows that vector retrieval currently outperforms text retrieval on the project’s synthetic evaluation set.
 - For the current project stage, vector retrieval is treated as the preferred baseline for downstream RAG answers, while the text baseline remains available for comparison, debugging, and potential hybrid strategies.
+
+## D-010 — Hybrid retrieval and multi-backend evaluation
+Date: 2026-07-24  
+Status: Accepted
+
+### Decision
+Add a simple hybrid retriever alongside the existing text and vector retrievers and extend the shared evaluation harness so that all three backends (text, vector, hybrid) can be compared on the same synthetic question set.
+
+Concretely:
+
+- keep `src/retrieve_text.py` as the lexical baseline over PostgreSQL full-text search,
+- keep `src/retrieve_vector.py` as the MiniLM-based semantic retriever over `chunk_embedding` (pgvector),
+- implement `src/retrieve_hybrid.py` as a reciprocal-rank-fusion (RRF)–style hybrid that:
+  - queries both text and vector backends with the same audience filters,
+  - pulls the top 10 candidates from each backend,
+  - fuses results per `chunk_id` using RRF to produce a `hybrid_score` and associated debug fields (`text_rank`, `vector_rank`, `text_score`, `vector_similarity`, etc.),
+- update `src/evaluate_retrieval.py` so it:
+  - runs text, vector, and hybrid retrieval for each question,
+  - computes strict Hit@5 and MRR, plus relaxed Hit@10 and MRR, for each backend,
+  - optionally writes per-question, per-backend debug records (including top‑k result metadata) to a JSONL file.
+
+### Reason
+The project already had a lexical baseline and a stronger vector retriever; introducing a hybrid retriever allows testing whether combining sparse and dense signals improves retrieval quality on ACSC AI guidance for this particular corpus and evaluation setup. Evaluating all three backends through a single, shared harness ensures:
+
+- fair metric comparison across methods,
+- a clearer picture of where each backend succeeds or fails,
+- better evidence for choosing a default retriever for downstream RAG answers.
+
+The JSONL debug export makes it easier to inspect individual questions, see how each backend ranked chunks, and understand how audience filters and chunk structure affect results.
+
+### Alternatives considered
+- Use only text and vector retrieval, without a hybrid experiment.
+- Adopt hybrid retrieval as the default without first measuring it against the existing baselines.
+- Implement a more complex hybrid strategy (for example, learned weighting or reranking) instead of a simple RRF fusion.
+
+### Trade-offs
+Adding a hybrid retriever and multi-backend evaluation:
+
+- introduces some extra code and evaluation complexity, and
+- produces more metrics to interpret,
+
+but:
+
+- keeps all retrieval methods aligned on the same corpus, schema, and audience filters,
+- provides concrete evidence about whether hybrid actually improves retrieval on this dataset,
+- offers richer debug information for analysing retrieval behaviour.
+
+Sticking with only text and vector would keep the system simpler but leave the question of hybrid benefits unanswered. Jumping directly to a more complex hybrid or reranking strategy would add complexity without first validating that a simple RRF fusion helps on this corpus.
+
+### Impact
+- The project now has three retrievers:
+  - text (lexical),
+  - vector (semantic, MiniLM),
+  - hybrid (RRF over text and vector),
+  all sharing the same chunk schema and audience-aware filters.
+- `src/evaluate_retrieval.py` reports strict and relaxed metrics for all three backends in a single run and can emit per-question debug records for deeper analysis.
+- On the current synthetic evaluation set, vector retrieval remains the strongest performer; hybrid retrieval substantially improves over text-only but does not outperform vector-only, so vector continues as the preferred baseline for downstream RAG work, with hybrid treated as an evaluated alternative and debugging aid.

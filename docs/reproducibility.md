@@ -310,6 +310,51 @@ In addition to the text-based retrieval baseline, the project includes a pgvecto
 
 With the vector index in place, another practitioner can run both text and vector retrievers over arbitrary queries (with the same audience filters and corpus) and rerun `src/evaluate_retrieval.py` to obtain metrics for each approach. The underlying dataset, manifest, chunking strategy, and seed/question generation pipeline remain unchanged, so all prior reproducibility guarantees still hold.
 
+### 3.10 Hybrid retrieval and multi-backend evaluation
+
+With both text and vector retrieval in place, the evaluation harness also supports a simple hybrid retriever and multi-backend comparison on the same synthetic question set.
+
+16. **Run hybrid retrieval and multi-backend evaluation**
+
+    ```bash
+    uv run python src/evaluate_retrieval.py
+    ```
+
+    - Reads `data/ground_truth_synthetic.jsonl`.
+    - Uses three retrieval backends:
+      - `src/retrieve_text.py` (lexical, PostgreSQL full-text search),
+      - `src/retrieve_vector.py` (semantic, pgvector nearest-neighbour search over MiniLM embeddings),
+      - `src/retrieve_hybrid.py` (hybrid, reciprocal-rank-fusion over text and vector results).
+    - For each backend, computes:
+      - strict Hit@k and MRR based on exact `chunk_id` matches,
+      - relaxed Hit@k and MRR where:
+        - exact `chunk_id` matches score highest,
+        - chunks from the same `source_id` and final heading (leaf of `heading_path`) count as partial hits.
+    - Prints a JSON summary with a separate metric block for each backend (`text`, `vector`, `hybrid`).
+
+17. **Optional: write per-question debug output for manual inspection**
+
+    ```bash
+    uv run python src/evaluate_retrieval.py --debug-output data/eval_retrieval_debug.jsonl
+    ```
+
+    - Writes one JSON record per question and per backend, including:
+      - the question text and audience fields (`target_size`, `target_role`),
+      - gold labels (`chunk_id`, `source_id`, leaf heading),
+      - strict and relaxed relevance scores for the top‑k results,
+      - top‑k retrieval metadata for each backend:
+        - for text: rank, `chunk_id`, `source_id`, leaf heading, text search score,
+        - for vector: rank, `chunk_id`, `source_id`, leaf heading, cosine distance and similarity,
+        - for hybrid: rank, `chunk_id`, `source_id`, leaf heading, `hybrid_score`, and, where available, `text_rank`, `vector_rank`, `text_score`, and `vector_similarity`.
+
+This debug file is intended for manual error analysis (for example, inspecting cases where hybrid helps or hurts relative to vector) and does not change any of the underlying datasets or corpus structure.
+
+From a reproducibility perspective:
+
+- the manifest, cleaned Markdown corpus, chunking strategy, and `data/chunks/chunks.jsonl` remain the same,
+- the same synthetic question set (`data/ground_truth_synthetic.jsonl`) is used for all backends,
+- the PostgreSQL `chunks` table continues to serve as the canonical retrieval index, extended with `chunk_embedding` for vector search and reused by the hybrid retriever.
+
 ---
 
 ## 4. Outputs

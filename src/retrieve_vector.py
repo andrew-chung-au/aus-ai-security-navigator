@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+from typing import Any
 
 from pgvector.psycopg import register_vector
+from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
 
 from db import get_db_connection
+from retrieve_text import ALLOWED_ROLE_TAGS, ALLOWED_SIZE_TAGS
 
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
@@ -21,12 +24,28 @@ def get_model() -> SentenceTransformer:
     return _model
 
 
+def resolve_limit(limit: int | None = None, k: int | None = None) -> int:
+    if limit is not None and k is not None and limit != k:
+        raise ValueError("Pass either limit or k, or pass the same value for both.")
+    if limit is not None:
+        return limit
+    if k is not None:
+        return k
+    return 5
+
+
 def retrieve_chunks_vector(
     query: str,
-    k: int = 5,
+    limit: int | None = None,
+    k: int | None = None,
     size_tag: str | None = None,
     role_tag: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
+    if not query.strip():
+        return []
+
+    resolved_limit = resolve_limit(limit=limit, k=k)
+
     model = get_model()
     query_embedding = model.encode(query, normalize_embeddings=True)
 
@@ -45,57 +64,58 @@ def retrieve_chunks_vector(
         chunk_chars,
         chunk_words,
         chunk_lines,
-        search_text,
-        (chunk_embedding <=> %s) AS cosine_distance
+        (chunk_embedding <=> %(query_embedding)s) AS cosine_distance,
+        (1 - (chunk_embedding <=> %(query_embedding)s)) AS similarity
     FROM chunks
     WHERE chunk_embedding IS NOT NULL
     """
-    params: list = [query_embedding]
+    params: dict[str, Any] = {
+        "query_embedding": query_embedding,
+        "limit": resolved_limit,
+    }
 
     if size_tag:
-        sql += " AND (size_audience_tag = %s OR size_audience_tag = 'all_sizes')"
-        params.append(size_tag)
+        sql += " AND (size_audience_tag = %(size_tag)s OR size_audience_tag = 'all_sizes')"
+        params["size_tag"] = size_tag
 
     if role_tag:
-        sql += " AND role_audience_tags @> %s::jsonb"
-        params.append(json.dumps([role_tag]))
+        sql += " AND role_audience_tags @> %(role_tag_json)s::jsonb"
+        params["role_tag_json"] = json.dumps([role_tag])
 
     sql += """
-    ORDER BY chunk_embedding <=> %s ASC, chunk_words ASC
-    LIMIT %s
+    ORDER BY cosine_distance ASC, chunk_words ASC
+    LIMIT %(limit)s
     """
-    params.extend([query_embedding, k])
 
     conn = get_db_connection()
     register_vector(conn)
 
     try:
-        with conn.cursor() as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
     finally:
         conn.close()
 
-    results = []
+    results: list[dict[str, Any]] = []
     for row in rows:
         results.append(
             {
-                "chunk_id": row[0],
-                "source_id": row[1],
-                "source_file": row[2],
-                "chunk_index": row[3],
-                "chunking_version": row[4],
-                "document_title": row[5],
-                "heading_path": row[6],
-                "size_audience_tag": row[7],
-                "role_audience_tags": row[8],
-                "chunk_text": row[9],
-                "chunk_chars": row[10],
-                "chunk_words": row[11],
-                "chunk_lines": row[12],
-                "search_text": row[13],
-                "cosine_distance": float(row[14]),
-                "similarity": float(1 - row[14]),
+                "chunk_id": row["chunk_id"],
+                "source_id": row["source_id"],
+                "source_file": row["source_file"],
+                "chunk_index": row["chunk_index"],
+                "chunking_version": row["chunking_version"],
+                "document_title": row["document_title"],
+                "heading_path": row["heading_path"],
+                "size_audience_tag": row["size_audience_tag"],
+                "role_audience_tags": row["role_audience_tags"],
+                "chunk_text": row["chunk_text"],
+                "chunk_chars": row["chunk_chars"],
+                "chunk_words": row["chunk_words"],
+                "chunk_lines": row["chunk_lines"],
+                "cosine_distance": float(row["cosine_distance"]),
+                "similarity": float(row["similarity"]),
             }
         )
 
@@ -103,15 +123,39 @@ def retrieve_chunks_vector(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("query")
-    parser.add_argument("--k", type=int, default=5)
-    parser.add_argument("--size-tag")
-    parser.add_argument("--role-tag")
+    parser = argparse.ArgumentParser(
+        description="Retrieve chunks from pgvector semantic search."
+    )
+    parser.add_argument("query", help="Search query text.")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Number of results to return.",
+    )
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=None,
+        help="Backward-compatible alias for --limit.",
+    )
+    parser.add_argument(
+        "--size-tag",
+        choices=sorted(ALLOWED_SIZE_TAGS - {"all_sizes"}),
+        default=None,
+        help="Optional organisation size filter.",
+    )
+    parser.add_argument(
+        "--role-tag",
+        choices=sorted(ALLOWED_ROLE_TAGS),
+        default=None,
+        help="Optional role filter.",
+    )
     args = parser.parse_args()
 
     results = retrieve_chunks_vector(
         query=args.query,
+        limit=args.limit,
         k=args.k,
         size_tag=args.size_tag,
         role_tag=args.role_tag,

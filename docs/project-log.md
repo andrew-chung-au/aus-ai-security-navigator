@@ -538,3 +538,40 @@ These patterns confirm that, on this corpus and benchmark, dense retrieval is a 
   - identify questions where text succeeds and vector fails (and vice versa)
   - inform decisions about hybrid retrieval or reranking for the final demo.
 - Begin wiring vector-based retrieval into the planned answer-generation workflow over retrieved chunks, using the existing LLM client helper.
+
+## 2026-07-24 — Hybrid retrieval and comparative evaluation (v2.5)
+
+### Goal
+Add a simple hybrid retriever on top of the existing text and vector baselines and compare all three approaches on the synthetic question set.
+
+### What was done
+- Refactored `src/retrieve_vector.py` to:
+  - use a consistent interface and row shape (including `similarity` and `cosine_distance`) aligned with the text retriever,
+  - keep query and stored embeddings normalised for cosine-distance search in PostgreSQL via pgvector.
+- Implemented `src/retrieve_hybrid.py` as a reciprocal-rank-fusion (RRF) hybrid retriever:
+  - called both the text and vector retrievers with the same audience filters (`size_audience_tag`, `role_audience_tags`),
+  - pulled the top 10 candidates from each backend,
+  - fused results per `chunk_id` using RRF, producing a `hybrid_score` and preserving debug fields such as `text_rank`, `vector_rank`, `text_score`, and `vector_similarity`.
+- Updated `src/evaluate_retrieval.py` to:
+  - evaluate three backends (`text`, `vector`, `hybrid`) against the same synthetic questions,
+  - compute strict Hit@5/MRR and relaxed Hit@10/MRR for each backend using the existing `chunk_id` and relaxed-heading matching logic,
+  - optionally write a JSONL debug file containing, per question and backend, the gold labels, relevance scores, and top‑k result metadata for manual inspection.
+- Ran the evaluation twice (with and without debug export) and observed:
+  - the text baseline remains the weakest retriever on this benchmark,
+  - vector retrieval achieves the highest Hit@k and MRR and remains the strongest default,
+  - the hybrid RRF retriever improves substantially over text alone but does not outperform vector-only retrieval on this corpus and question set.
+
+### Why
+- Adding a hybrid retriever makes it possible to test whether combining lexical and dense signals improves retrieval quality on ACSC AI guidance, rather than assuming vector search is always best.
+- Using a shared evaluation harness across text, vector, and hybrid retrieval keeps the comparison fair and reproducible.
+- Per-question debug export makes it easier to understand where hybrid helps, where it hurts, and how audience filters and chunk structure influence ranking.
+
+### Problems / uncertainties
+- On the current synthetic question set (27 questions), hybrid retrieval did not beat vector retrieval, suggesting that simple RRF over top‑10 text and vector candidates may not add enough complementary signal for this corpus.
+- Some questions show divergent rankings between backends; understanding these cases may inform future work on weighting schemes, query rewriting, or reranking models.
+- The evaluation set remains relatively small; wider manual testing and more seeds may still shift which retriever is preferred.
+
+### Next step
+- Keep vector retrieval as the preferred baseline retriever for the next project phase, with text and hybrid as evaluated reference points.
+- Use the JSONL debug output to inspect a handful of successes and failures per backend and decide whether any small hybrid or ranking tweaks are worth exploring.
+- Begin wiring the vector-based retriever into the first answer-generation layer over retrieved ACSC chunks, while keeping the evaluation harness as the main way to measure retrieval changes.

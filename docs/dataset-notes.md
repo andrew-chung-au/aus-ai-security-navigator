@@ -296,3 +296,30 @@ These retrieval and evaluation behaviours do not alter the dataset itself:
 - the seed manifest, vetted seeds, and synthetic question dataset continue to rely on `chunk_id`, `heading_path`, `size_audience_tag`, and `role_audience_tags`  
 
 This document therefore continues to describe the dataset and its structure; retrieval and evaluation changes are reflected here only insofar as they explain how the existing corpus is currently searched and assessed.
+
+### Vector retrieval and hybrid evaluation
+
+The retrieval-ready corpus in `data/chunks/chunks.jsonl` is also used to build a dense vector index inside PostgreSQL:
+
+- A local MiniLM sentence-transformers model encodes each chunk’s embedding text into a normalised vector.
+- Embeddings are written into a `chunk_embedding` pgvector column on the `chunks` table.
+- Query embeddings are computed with the same model and normalisation settings, and nearest-neighbour search uses cosine distance (`chunk_embedding <=> query_embedding`), with optional audience filters on `size_audience_tag` and `role_audience_tags`.
+
+A parallel vector retriever (`src/retrieve_vector.py`) exposes this behaviour and returns chunk dictionaries that include both `cosine_distance` and a convenience `similarity` score (`1 - cosine_distance`) alongside the usual metadata.
+
+A hybrid retriever (`src/retrieve_hybrid.py`) is layered on top of the text and vector backends:
+
+- it queries both backends with the same audience filters,
+- pulls a small candidate set from each (e.g. top‑10 text and top‑10 vector),
+- fuses results per `chunk_id` using reciprocal rank fusion (RRF) to produce a `hybrid_score`,
+- preserves backend-specific debug fields such as `text_rank`, `vector_rank`, `text_score`, and `vector_similarity`.
+
+The evaluation harness (`src/evaluate_retrieval.py`) now runs three retrieval modes over `data/ground_truth_synthetic.jsonl`:
+
+- text (lexical),
+- vector (dense),
+- hybrid (RRF over text and vector),
+
+and computes strict Hit@k and MRR based on exact `chunk_id` matches, plus relaxed metrics where same-document / same-leaf-heading matches count as partial hits. An optional JSONL debug output contains, for each question and backend, the gold labels, per-rank relevance flags, and top‑k result metadata; this is used for manual inspection but does not alter the underlying datasets.
+
+On the current synthetic question set, vector retrieval outperforms both the text baseline and the simple hybrid fusion, so vector is treated as the preferred baseline for downstream RAG work. The text and hybrid retrievers remain useful as comparative baselines and debugging tools; they operate over the same chunk corpus and audience metadata described in this document, without changing the dataset itself.
