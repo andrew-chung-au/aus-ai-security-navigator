@@ -1,8 +1,6 @@
 # Dataset notes
 
-
 ## Core sources
-
 
 ### HTML pages in first build
 - An introduction to artificial intelligence
@@ -13,12 +11,10 @@
 - Careful adoption of agentic AI services
 - Artificial intelligence for small business: Managing cyber security risks
 
-
 ### Attached PDFs in first build
 - Defending against AI-enabled cyber attacks – Guidance for small businesses
 - Defending against AI-enabled cyber attacks – Guidance for medium-sized businesses
 - Defending against AI-enabled cyber attacks – Guidance for government, critical infrastructure and large enterprises
-
 
 These core sources are defined in `data/source_manifest_core.csv`. The manifest includes audience metadata split into two dimensions:
 
@@ -27,9 +23,7 @@ These core sources are defined in `data/source_manifest_core.csv`. The manifest 
 
 These fields are propagated into the retrieval corpus so each chunk carries both organisation size and role context.
 
-
 ## Boundary sources
-
 
 Retained for possible later expansion, but excluded from the first index build:
 
@@ -41,15 +35,12 @@ Retained for possible later expansion, but excluded from the first index build:
 
 Operational technology (OT) guidance is excluded from the first build because it broadens the project into critical infrastructure and OT environments beyond the initial scope.
 
-
 ## Formats and extraction
-
 
 - Core sources are ingested as HTML pages and attached PDFs.
 - All first-build sources are converted into local Markdown files after extraction.
 - The source manifest records `content_type` (`html` or `pdf`) so the workflow can route each source to the appropriate downloader and extractor.
 - The mixed HTML/PDF corpus improves coverage for audience-specific and topic-specific questions, but it also requires format-specific extraction and cleanup.
-
 
 ### Manual review
 
@@ -67,9 +58,7 @@ Typical corrections include:
 
 The reviewed Markdown files form the cleaned corpus used for chunking, embedding, and retrieval.
 
-
 ## Audience-aware corpus
-
 
 The project treats ACSC AI guidance as an audience-aware corpus:
 
@@ -83,16 +72,13 @@ The `size_audience_tag` and `role_audience_tags` fields in `data/source_manifest
 - evaluation of audience- and role-specific queries
 - source-grounded answers that better match organisation type and responsibility
 
-
 ## Retrieval-ready corpus
-
 
 The first retrieval-ready corpus is written to:
 
 - `data/chunks/chunks.jsonl`
 
 Each line in `data/chunks/chunks.jsonl` represents one chunk as a JSON object.
-
 
 ### Minimum chunk schema
 
@@ -113,9 +99,7 @@ This schema is intentionally minimal. It preserves provenance, section context, 
 
 During development, the chunking script may also emit diagnostic metrics such as chunk word count, character count, or line count to help inspect chunk sizes. These are treated as diagnostics rather than part of the core retrieval schema.
 
-
 ## Chunking approach
-
 
 The cleaned Markdown corpus is chunked using a heading-aware approach rather than document-wide fixed-size windows. Markdown headings, lists, and tables are treated as meaningful structural boundaries and are preserved where practical.
 
@@ -134,7 +118,6 @@ This approach is intended to:
 - Where useful for retrieval, the heading breadcrumb may be prepended to `chunk_text` before embedding.
 - Very large sections may be split further when structure provides a natural boundary.
 
-
 ### Enumerated sections
 
 Some sections contain long top-level numbered recommendations or best-practice lists. Where these lists are large enough to create overly broad chunks, they are split into smaller item-level chunks.
@@ -147,13 +130,11 @@ In these cases:
 
 This is used to preserve the semantic focus of enumerated guidance without falling back to arbitrary fixed-size windows.
 
-
 ### Lists
 
 - Bullet lists and numbered lists should be kept intact where practical rather than split mid-list.
 - Nested lists should remain attached to their parent list item.
 - Action-oriented checklist sections are treated as cohesive chunk units unless there is a strong structural reason to split them.
-
 
 ### Risk and mitigation pairings
 
@@ -165,7 +146,6 @@ Examples in the first build include:
 - `ai-data-security.md` – risk headings paired with mitigation content
 - `engaging-with-ai.md` – threat sections paired with case studies
 - `agentic-ai-adoption.md` – risk or security domains paired with scenario examples and recommended best practices
-
 
 ### Tables
 
@@ -183,9 +163,7 @@ Examples in the first build include:
 - the AI system lifecycle table in `ai-data-security.md`
 - the glossary table in `ai-small-business.md`
 
-
 ## Document-specific patterns
-
 
 Some source documents have recurring structures that the chunking process should preserve.
 
@@ -205,9 +183,7 @@ Risk and security domains contain nested scenario examples and recommended best 
 
 Domain sections contain nested risks, mitigations, and supporting material. These should be chunked with their parent domain context preserved.
 
-
 ## Manual chunk QA
-
 
 For the first build, a small sampled subset of chunks can be exported from `data/chunks/chunks.jsonl` and manually inspected before retrieval indexing.
 
@@ -216,7 +192,7 @@ This spot-check is intended to verify that:
 - `heading_path` reflects the cleaned Markdown structure
 - `size_audience_tag` and `role_audience_tags` have been propagated correctly from the manifest
 - lists and tables were not broken badly
-- paired or closely related sections remain coherent where intended
+- paired or closely related sections remain coherent when intended
 
 Representative spot-checks should include one or two chunks from major source types, such as:
 
@@ -232,9 +208,50 @@ Where used, this produces inspection files such as:
 
 This QA step is lightweight and manual, but it helps confirm corpus quality before embeddings, retrieval indexing, and evaluation are added.
 
+## Evaluation seed and question generation
+
+The project now includes an early evaluation-data pipeline built around a curated seed manifest, deterministic seed matching, LLM seed vetting, and synthetic question generation.
+
+### Seed manifest
+
+A curated seed manifest (`data/ground_truth_seed_draft.json`) defines the passages and audience slices that should be tested. Each seed typically includes:
+
+- `source_id`
+- `target_size`
+- `target_role`
+- `passage_type`
+- `why_this_passage`
+- `best_heading_path_guess`
+- optional `numbered_item_title_guess`
+- optional `anchor_quote`
+
+This file is intentionally a draft configuration rather than final ground truth. It captures “what to test” before synthetic questions are generated.
+
+### Seed matching and vetting
+
+Seeds are matched deterministically to concrete chunks in `data/chunks/chunks.jsonl`, producing candidate chunk records with match scores and debugging information.
+
+The matching process gives strong precedence to numbered list items when `numbered_item_title_guess` is present, so list-item seeds resolve to the intended passage rather than a generic sibling under the same section.
+
+Matched chunks are then passed through an LLM-based vetting step. The judge decides whether each chunk should be included for evaluation, assigns a seed quality label, and may refine the passage type based on the actual chunk content.
+
+This vetting stage helps filter out weak, overly narrow, or off-target passages before question generation begins.
+
+### Synthetic question generation
+
+Vetted seed chunks are used to generate realistic synthetic evaluation questions. The generation step is A → Q* style: a passage is treated as the answer source, and the model produces user-like questions that this passage would plausibly answer.
+
+The generated questions are written to `data/ground_truth_synthetic.jsonl`. Each record preserves the source chunk and audience context so later retrieval and answer evaluation can be sliced by:
+
+- `chunk_id`
+- `size_audience_tag`
+- `role_audience_tags`
+- `target_size`
+- `target_role`
+
+Batch generation includes retry handling and a fixed delay between successful requests to stay within rate limits.
 
 ## Current first-build status
-
 
 For the first build:
 
@@ -247,10 +264,11 @@ For the first build:
 - long enumerated sections can be split into item-level chunks where needed
 - diagnostic fields such as chunk word count, character count, or line count may be present for inspection, but are treated as non-core metadata
 - a small sampled subset of chunks can be exported and manually inspected before retrieval indexing
-
+- a curated seed manifest has been matched to chunks and vetted for evaluation use
+- synthetic ground-truth questions have been generated and saved to `data/ground_truth_synthetic.jsonl`
+- batch generation includes retry handling and fixed pacing to respect rate limits
 
 ## Summary
-
 
 - The first index build uses a curated ACSC AI guidance corpus consisting of core HTML pages and three audience-specific PDF guides.
 - Boundary sources are retained for possible later expansion but excluded from the first build.
@@ -260,3 +278,5 @@ For the first build:
 - Chunking is structure-aware and preserves headings, lists, tables, and risk / mitigation relationships where practical.
 - Long enumerated guidance sections may be split into item-level chunks when that improves retrieval focus.
 - A small manual spot-check step can be used to inspect sampled chunks before retrieval indexing.
+- The project now includes a seed-to-question evaluation pipeline for deterministic matching, LLM vetting, and synthetic ground-truth question generation.
+- Batch generation is paced and retried to stay within request limits while producing reusable evaluation data.

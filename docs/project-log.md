@@ -275,3 +275,55 @@ Connect curated evaluation seeds to concrete chunks and vet them as suitable see
 ### Next step
 - Use the vetted seeds as the basis for A → Q* question generation to build `ground_truth_questions.jsonl` for retrieval and RAG evaluation
 - Begin designing evaluation metrics and harnesses (e.g. Hit Rate, MRR, LLM-as-judge for answers) that consume the vetted seeds and generated questions
+
+## 2026-07-23 — Ground-truth question generation pipeline
+
+### Goal
+Generate synthetic evaluation questions from vetted seed chunks for the A → Q* retrieval setup.
+
+### What was done
+- Built `src/generate_ground_truth_questions.py` to generate one realistic question per vetted seed chunk.
+- Used the matched `candidate_chunk` as the source of truth and the seed metadata as generation context.
+- Added audience-aware provenance to each output record, including:
+  - `target_size`
+  - `target_role`
+  - `size_audience_tag`
+  - `role_audience_tags`
+- Wrote the generated dataset to `data/ground_truth_synthetic.jsonl`.
+- Added structured-output client helpers in `src/llm_client.py`.
+- Added a small structured-output smoke test in `src/test_structured_output.py`.
+- Updated `README.md`, `docs/reproducibility.md`, `pyproject.toml`, and `uv.lock` to reflect the new generation workflow and dependencies.
+
+### Why
+- The evaluation workflow needs a stable, reproducible question set tied to gold chunks.
+- Including both seed intent and chunk provenance makes later retrieval and slice-based evaluation easier.
+- A dedicated generation script keeps the dataset creation step separate from retrieval and answer evaluation.
+
+### Problems / uncertainties
+- The generation job hit the free-tier request quota once and needed retry/backoff handling.
+- A small fixed delay between requests is useful for staying under rate limits during batch generation.
+
+### Next step
+Run retrieval evaluation on the generated question set, starting with Hit Rate and MRR over `chunk_id`.
+
+## 2026-07-23 — Batch pacing and retry handling
+
+### Goal
+Make synthetic question generation more stable under API rate limits.
+
+### What was done
+- Kept retry handling in the shared LLM client helper.
+- Added the plan to pace batch generation in the question-generation script rather than in the shared client.
+- Chose a fixed 4-second delay between successful requests to better respect the 15-requests-per-minute quota.
+
+### Why
+- The batch job is sequential, so a simple fixed delay reduces quota errors.
+- Keeping pacing in the batch script avoids slowing down unrelated LLM calls elsewhere in the project.
+
+### Problems / uncertainties
+- Retries still may be needed if the external service is temporarily unavailable.
+- If other processes share the same quota, the delay may still need adjustment.
+
+### Next step
+Commit the documentation and pipeline updates, then proceed to retrieval evaluation.
+
