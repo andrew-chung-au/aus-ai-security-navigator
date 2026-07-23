@@ -1,5 +1,6 @@
 # Project log
 
+
 ## 2026-07-21 — Project start
 
 ### Goal
@@ -26,6 +27,7 @@ Choose a dataset and define the project scope.
 
 ### Next step
 Create the source manifest and download script.
+
 
 ## 2026-07-22 — Dataset / source corpus
 
@@ -57,7 +59,8 @@ The corpus is public, accessible, and specific enough that retrieval should add 
 ### Next step
 Create the source manifest, download script, and extraction workflow for both HTML and PDF sources.
 
-## 2026-07-22 — Corpus extraction and audience framing
+
+## 2026-07-22 — Corpus extraction and audience framing (v1)
 
 ### Goal
 Move from raw ACSC sources to a cleaned corpus and clarify how audience context will be represented.
@@ -70,21 +73,22 @@ Move from raw ACSC sources to a cleaned corpus and clarify how audience context 
   - missing or malformed lists
   - table structure and reading-order issues
   - duplicated paragraphs
-- Confirmed the source manifest structure and added an explicit `audience_tag` field for each source
+- Confirmed the source manifest structure and, for the initial version, added an explicit single `audience_tag` field per source
 - Aligned deterministic audience tags with `source_id` values in `data/source_manifest_core.csv`
 
 ### Why
 - The project depends on audience-aware retrieval: many ACSC AI guidance documents are written specifically for small businesses, medium-sized businesses, or government, critical infrastructure, and large enterprises, and this context needs to be preserved through ingestion and chunking
 - Mixed HTML/PDF sources can introduce extraction noise that harms retrieval, so a one-time manual review and correction step is a pragmatic quality improvement for a small curated dataset
-- Freezing `audience_tag` at the document level in the manifest keeps the mapping simple and deterministic while still allowing chunks to carry audience metadata in the retrieval index
+- Freezing audience metadata at the document level in the manifest keeps the mapping simple and deterministic while still allowing chunks to carry audience metadata in the retrieval index
 
 ### Problems / uncertainties
-- Some guidance pages are broad organisational documents and are tagged as `general_organisation` even though they may skew toward larger or more complex environments
-- Joint or multi-agency guidance may imply audiences not captured perfectly by the normalized project vocabulary
-- Audience tags for some documents may need refinement later if evaluation reveals mismatches between query intent and document tagging
+- Some guidance pages are broad organisational documents and were initially tagged as `general_organisation` even though they may skew toward larger or more complex environments
+- Joint or multi-agency guidance may imply audiences not captured perfectly by a single normalized label
+- Audience tags for some documents might need refinement later if evaluation reveals mismatches between query intent and document tagging
 
 ### Next step
 Use the updated manifest to prepare a retrieval-ready corpus from the cleaned Markdown files.
+
 
 ## 2026-07-22 — Chunk schema and heading-aware chunking
 
@@ -92,12 +96,20 @@ Use the updated manifest to prepare a retrieval-ready corpus from the cleaned Ma
 Define the minimum retrieval chunk schema and prepare the first retrieval-ready chunked corpus.
 
 ### What was done
-- Defined a minimum chunk schema for the first build:
-  - `source_file`
-  - `document_title`
-  - `heading_path`
-  - `audience_tag`
-  - `chunk_text`
+- Defined a minimum chunk schema for the first build (later updated after the audience refactor):
+  - initial version:
+    - `source_file`
+    - `document_title`
+    - `heading_path`
+    - `audience_tag`
+    - `chunk_text`
+  - current version:
+    - `source_file`
+    - `document_title`
+    - `heading_path`
+    - `size_audience_tag`
+    - `role_audience_tags`
+    - `chunk_text`
 - Implemented heading-aware chunk preparation over the cleaned Markdown corpus
 - Wrote the first retrieval-ready corpus to `data/chunks/chunks.jsonl`
 - Added a chunk-preparation script in `src/prepare_chunks.py`
@@ -137,6 +149,7 @@ Build the retrieval index over `data/chunks/chunks.jsonl` and design a small eva
 - document-specific operational guidance
 - cases where overlapping documents may compete in retrieval
 
+
 ## 2026-07-22 — Chunk QA and reproducibility update
 
 ### Goal
@@ -151,7 +164,7 @@ Add a lightweight quality check for the chunked corpus and document it as part o
   - selected HTML guidance pages
 - Confirmed during inspection that:
   - `heading_path` generally reflects the cleaned Markdown structure
-  - `audience_tag` is being propagated correctly from the manifest
+  - audience metadata is being propagated correctly from the manifest
   - lists and tables were not broken badly in the sampled chunks
 - Added a small helper script to export sampled chunks for manual inspection:
   - `src/spotcheck_chunks.py`
@@ -172,7 +185,93 @@ Add a lightweight quality check for the chunked corpus and document it as part o
 
 ### Next step
 Build the first retrieval index over `data/chunks/chunks.jsonl` and begin designing or running a small retrieval evaluation set to test:
-- audience-aware queries
+- audience-aware queries (using `size_audience_tag` and `role_audience_tags`)
 - document-specific operational guidance queries
 - overlapping-topic queries where multiple sources may compete
 - whether the current chunking decisions hold up under actual retrieval
+
+
+## 2026-07-23 — Audience metadata: size and role refactor
+
+### Goal
+Refine audience representation to separate organisation size from AI responsibility (builder vs consumer) and propagate this into the retrieval corpus.
+
+### What was done
+- Replaced the single `audience_tag` field in `data/source_manifest_core.csv` with:
+  - `size_audience_tag` (e.g. `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)
+  - `role_audience_tags` (e.g. `ai_consumer`, `ai_builder`, or both)
+- Updated manifest rows for all core sources to use the new two-dimensional scheme
+- Updated `src/prepare_chunks.py` so each chunk record now carries:
+  - `size_audience_tag`
+  - `role_audience_tags`
+- Updated `src/download_sources.py` so download metadata captures the new audience fields for provenance
+- Updated documentation (`README.md`, `docs/dataset-notes.md`, `docs/reproducibility.md`, `docs/decisions.md`) to reflect the new audience model and chunk schema
+
+### Why
+- Many documents clearly differentiate between organisations using/adopting AI and those building or providing AI systems
+- A single label could not cleanly express both organisation size and role, which limited audience-aware retrieval and evaluation
+- Making size and role explicit supports more precise filtering and more transparent explanations of why particular documents are retrieved (for example, “large enterprise AI builder” vs “small business AI consumer”)
+
+### Problems / uncertainties
+- Some documents apply across all sizes and both roles; in these cases, conservative tagging (e.g. `all_sizes` plus both roles) may still be coarse
+- Future evaluation may suggest further refinement (for example, more granular roles), but that is deferred to later iterations
+
+### Next step
+Regenerate `data/chunks/chunks.jsonl` with the new audience fields and confirm the updated schema via spot-checking before indexing.
+
+
+## 2026-07-23 — Seed–chunk matching and seed vetting (v1)
+
+### Goal
+Connect curated evaluation seeds to concrete chunks and vet them as suitable seed passages for question generation.
+
+### What was done
+- Created `data/ground_truth_seed_draft.json` as a curated list of important passages to test, with fields:
+  - `source_id`
+  - `target_size`
+  - `target_role`
+  - `passage_type`
+  - `why_this_passage`
+  - `best_heading_path_guess`
+  - optional `numbered_item_title_guess`
+  - optional `anchor_quote`
+- Implemented a deterministic seed–chunk matching script (`src/match_seeds_to_chunks.py`) that:
+  - groups chunks by `source_id`
+  - for each seed, optionally narrows the candidate pool to chunks whose last heading matches `numbered_item_title_guess` after loose normalization
+  - if such numbered-item matches exist, ranks only that subset; otherwise, uses all chunks for that `source_id`
+  - computes similarity scores based on:
+    - full heading-path similarity
+    - last-heading similarity and an exact-match bonus
+    - numbered item title similarity and exact-match bonus (when present)
+    - anchor-quote similarity and containment (when present)
+  - selects the best-scoring chunk and records:
+    - `candidate_chunk` (compact metadata + `chunk_text`)
+    - `candidate_debug` (scoring breakdown)
+    - `match_score`, `selection_confidence`, `score_margin`
+    - `selection_strategy` (e.g. `numbered_item_exact_subset` or `all_source_chunks`)
+- Wrote the matching results to `data/seed_chunk_candidates.json`
+- Designed and applied an LLM-based judging prompt that:
+  - inspects each `candidate_chunk`
+  - decides `include_for_eval` (true/false)
+  - assigns `seed_quality` (`high`, `medium`, or `low`)
+  - may adjust `suggested_passage_type` based on the actual content
+  - provides a short natural-language `reason` for the judgement
+- Collected the judgements in a vetted seed file (e.g. `data/ground_truth_seeds_vetted.jsonl`)
+- Observed that, for the current curated seeds:
+  - all inspected seeds were marked `include_for_eval: true`
+  - most seeds were rated `high` quality, with some `medium` and no `low` ratings in this pass
+
+### Why
+- Mapping high-level seed intents (size, role, passage_type, heading guess, anchor quote) to concrete chunks is necessary for reproducible evaluation
+- Explicit handling of `numbered_item_title_guess` ensures that list-item seeds (such as “4. Leverage trusted infrastructure”) resolve to the intended chunk rather than a generic sibling under the same section
+- Using an LLM as a judge at this stage surfaces weak or overly narrow passages before investing in question generation and retrieval metrics
+- Storing both `candidate_chunk` and `candidate_debug` supports later debugging and potential tuning of the matching heuristics
+
+### Problems / uncertainties
+- Matching still depends on heuristics; while numbered items now have stronger precedence, some edge cases may remain where heading paths or anchor quotes are ambiguous
+- The current vetted set has no `seed_quality: "low"` entries, which reflects strong initial curation but may under-sample problematic passages; future iterations may need to add intentionally borderline seeds
+- LLM judgement is stable for this small set, but future expansions may require calibration or spot-checking by humans
+
+### Next step
+- Use the vetted seeds as the basis for A → Q* question generation to build `ground_truth_questions.jsonl` for retrieval and RAG evaluation
+- Begin designing evaluation metrics and harnesses (e.g. Hit Rate, MRR, LLM-as-judge for answers) that consume the vetted seeds and generated questions

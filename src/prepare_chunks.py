@@ -6,13 +6,14 @@ import re
 from pathlib import Path
 from typing import List, Dict, Tuple
 
-
 # Paths
 MANIFEST_PATH = Path("data/source_manifest_core.csv")
 INPUT_DIR = Path("data/processed")
 OUTPUT_DIR = Path("data/chunks")
 OUTPUT_PATH = OUTPUT_DIR / "chunks.jsonl"
 
+# Version this whenever chunking logic changes in a way that can affect chunk boundaries
+CHUNKING_VERSION = "v1"
 
 # Match Markdown headings like "# Title", "## Section", etc.
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
@@ -20,13 +21,24 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 # Match top-level numbered list items like "1. Something"
 NUMBERED_ITEM_RE = re.compile(r"^(\d+)\.\s+(.*\S)\s*$")
 
-
 # Child headings that should be merged into their parent section
 PAIR_CHILD_HEADINGS = {
     "managing risks",
     "scenario example:",
     "scenario example",
     "recommended best practices",
+}
+
+VALID_SIZE_TAGS = {
+    "small_business",
+    "medium_business",
+    "large_enterprise_gov_critical",
+    "all_sizes",
+}
+
+VALID_ROLE_TAGS = {
+    "ai_consumer",
+    "ai_builder",
 }
 
 
@@ -223,7 +235,6 @@ def section_to_chunks(section: dict) -> List[dict]:
 
     numbered_parts = split_numbered_items(content)
 
-    # No useful numbered split found
     if len(numbered_parts) == 1 and numbered_parts[0]["type"] == "full":
         return [
             {
@@ -256,7 +267,7 @@ def build_chunk_text(heading_path: List[str], content: str) -> str:
     """
     Prepend the heading breadcrumb to the chunk text for better retrieval.
     Example:
-      'Recommended actions > Immediate\\n\\n<content>'
+      'Recommended actions > Immediate\n\n<content>'
     """
     breadcrumb = " > ".join(heading_path).strip()
     if breadcrumb:
@@ -294,19 +305,49 @@ def main() -> None:
             if source_id not in manifest_by_id:
                 valid_ids = sorted(manifest_by_id.keys())
                 raise ValueError(
-                    "\n".join([
-                        f"Markdown file '{file_path.name}' does not match any manifest source_id.",
-                        f"Filename stem: '{source_id}'",
-                        f"Valid source_id values: {', '.join(valid_ids)}"
-                    ])
+                    "\n".join(
+                        [
+                            f"Markdown file '{file_path.name}' does not match any manifest source_id.",
+                            f"Filename stem: '{source_id}'",
+                            f"Valid source_id values: {', '.join(valid_ids)}",
+                        ]
+                    )
                 )
 
             manifest_row = manifest_by_id[source_id]
-            audience_tag = manifest_row.get("audience_tag", "").strip()
-            if not audience_tag:
-                raise ValueError(f"Missing audience_tag for source_id={source_id}")
+
+            size_audience_tag = manifest_row.get("size_audience_tag", "").strip()
+            role_audience_tags_raw = manifest_row.get("role_audience_tags", "").strip()
+
+            if not size_audience_tag:
+                raise ValueError(f"Missing size_audience_tag for source_id={source_id}")
+
+            if size_audience_tag not in VALID_SIZE_TAGS:
+                raise ValueError(
+                    f"Invalid size_audience_tag '{size_audience_tag}' for source_id={source_id}"
+                )
+
+            if not role_audience_tags_raw:
+                raise ValueError(f"Missing role_audience_tags for source_id={source_id}")
+
+            role_audience_tags = [
+                tag.strip() for tag in role_audience_tags_raw.split(";") if tag.strip()
+            ]
+
+            if not role_audience_tags:
+                raise ValueError(
+                    f"role_audience_tags is empty after parsing for source_id={source_id}"
+                )
+
+            invalid_roles = [tag for tag in role_audience_tags if tag not in VALID_ROLE_TAGS]
+            if invalid_roles:
+                raise ValueError(
+                    f"Invalid role_audience_tags {invalid_roles} for source_id={source_id}"
+                )
 
             merged_sections = merge_sections(sections)
+
+            chunk_index = 0
 
             for section in merged_sections:
                 chunk_parts = section_to_chunks(section)
@@ -314,15 +355,21 @@ def main() -> None:
                 for chunk_part in chunk_parts:
                     chunk_text = build_chunk_text(
                         chunk_part["heading_path"],
-                        chunk_part["content"]
+                        chunk_part["content"],
                     )
                     metrics = chunk_length_metrics(chunk_text)
+                    chunk_id = f"{source_id}::{chunk_index:03d}"
 
                     record = {
+                        "source_id": source_id,
                         "source_file": file_path.name,
+                        "chunk_index": chunk_index,
+                        "chunk_id": chunk_id,
+                        "chunking_version": CHUNKING_VERSION,
                         "document_title": document_title,
                         "heading_path": chunk_part["heading_path"],
-                        "audience_tag": audience_tag,
+                        "size_audience_tag": size_audience_tag,
+                        "role_audience_tags": role_audience_tags,
                         "chunk_text": chunk_text,
                         "chunk_chars": metrics["chars"],
                         "chunk_words": metrics["words"],
@@ -339,10 +386,14 @@ def main() -> None:
                     ):
                         smallest_chunk = record
 
+                    chunk_index += 1
+
     print(f"Wrote {chunk_count} chunks to {OUTPUT_PATH}")
 
     if smallest_chunk:
         print("\nSmallest chunk by words:")
+        print(f"  source_id: {smallest_chunk['source_id']}")
+        print(f"  chunk_id: {smallest_chunk['chunk_id']}")
         print(f"  source_file: {smallest_chunk['source_file']}")
         print(f"  heading_path: {' > '.join(smallest_chunk['heading_path'])}")
         print(f"  words: {smallest_chunk['chunk_words']}")
@@ -352,13 +403,15 @@ def main() -> None:
     largest_chunks = sorted(
         all_chunks,
         key=lambda x: x["chunk_words"],
-        reverse=True
+        reverse=True,
     )[:5]
 
     if largest_chunks:
         print("\nTop 5 largest chunks by words:")
         for i, chunk in enumerate(largest_chunks, start=1):
             print(f"\n{i}.")
+            print(f"  source_id: {chunk['source_id']}")
+            print(f"  chunk_id: {chunk['chunk_id']}")
             print(f"  source_file: {chunk['source_file']}")
             print(f"  heading_path: {' > '.join(chunk['heading_path'])}")
             print(f"  words: {chunk['chunk_words']}")

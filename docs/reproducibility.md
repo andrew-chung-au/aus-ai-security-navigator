@@ -1,6 +1,6 @@
 # Reproducibility
 
-This project is designed to be reproducible from a clean checkout using a documented environment, a manifest-defined dataset, a semi-manual extraction workflow, a structure-aware chunking process, and a small manual QA step before retrieval indexing. Reproducible workflows benefit from clearly documented inputs, scripted transformations, and explicit validation points, especially where human review is part of the pipeline. [web:105][web:106][web:111]
+This project is designed to be reproducible from a clean checkout using a documented environment, a manifest-defined dataset, a semi-manual extraction workflow, a structure-aware chunking process, and a small manual QA step before retrieval indexing. Reproducible workflows benefit from clearly documented inputs, scripted transformations, and explicit validation points, especially where human review is part of the pipeline.
 
 ## Environment
 
@@ -37,7 +37,8 @@ This creates the Python environment and installs all dependencies at the pinned 
   - `core`
   - `boundary`
   - `notes`
-  - `audience_tag` (normalized audience label for retrieval, e.g. `small_business`, `medium_business`, `large_enterprise_gov_critical`, `ai_system_provider`, `general_organisation`)
+  - `size_audience_tag` (organisation size / criticality, e.g. `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)
+  - `role_audience_tags` (role / responsibility, e.g. `ai_consumer`, `ai_builder`, or both, stored as a `;`-separated list)
 
 ### Source documents
 
@@ -69,7 +70,7 @@ The end-to-end workflow is:
    Convert downloaded PDFs into local Markdown files in `data/processed/`, with attention to reading order and structural elements.
 
    ```bash
-   uv run python src/extract_pdf.py data/raw/pdf
+   uv run python src/extract_pdfs.py data/raw/pdf
    ```
 
 4. **Manually review and edit extracted Markdown**
@@ -90,7 +91,7 @@ The end-to-end workflow is:
    Use the cleaned Markdown to build the retrieval corpus in `data/chunks/chunks.jsonl`:
 
    - apply heading-aware chunking (chunks anchored to document titles and heading paths)
-   - propagate `audience_tag` from the manifest into each chunk
+   - propagate `size_audience_tag` and `role_audience_tags` from the manifest into each chunk
    - keep lists intact where practical
    - treat tables and related risk / mitigation sections as special cases so structure and semantics are preserved
    - handle long enumerated sections by splitting into smaller item-level chunks when needed
@@ -104,12 +105,13 @@ The end-to-end workflow is:
    - `source_file`
    - `document_title`
    - `heading_path`
-   - `audience_tag`
+   - `size_audience_tag`
+   - `role_audience_tags`
    - `chunk_text`
 
 6. **Spot-check sampled chunks**
 
-   After `data/chunks/chunks.jsonl` is produced, manually inspect a small sample of chunks before building the retrieval index. This spot-check is a lightweight QA step to confirm that the chunking rules behaved as intended across representative source types. Explicit validation steps improve reproducibility because they document how intermediate outputs are checked, not just how they are created. [web:97][web:101][web:93]
+   After `data/chunks/chunks.jsonl` is produced, manually inspect a small sample of chunks before building the retrieval index. This spot-check is a lightweight QA step to confirm that the chunking rules behaved as intended across representative source types. Explicit validation steps improve reproducibility because they document how intermediate outputs are checked, not just how they are created.
 
    A representative spot-check should include around 10 to 15 chunks, covering one or two chunks from each important source type, for example:
 
@@ -121,7 +123,7 @@ The end-to-end workflow is:
    During inspection, confirm that:
 
    - `heading_path` reflects the cleaned Markdown structure
-   - `audience_tag` matches the document-level manifest value
+   - `size_audience_tag` and `role_audience_tags` match the manifest values
    - lists and tables were not broken badly
    - section groupings remain coherent where intended
 
@@ -140,7 +142,7 @@ The end-to-end workflow is:
 
 7. **Build retrieval index**
 
-   Embed the chunks and build a retrieval index over `data/chunks/chunks.jsonl`, using manifest metadata such as `source_id`, `title`, and `audience_tag` for filtering and evaluation.
+   Embed the chunks and build a retrieval index over `data/chunks/chunks.jsonl`, using manifest metadata such as `source_id`, `title`, `size_audience_tag`, and `role_audience_tags` for filtering and evaluation.
 
    Embedding and index-building commands depend on the chosen library or service and are documented alongside the retrieval code.
 
@@ -157,7 +159,7 @@ From the project root, the core ingestion, chunk-preparation, and QA steps can b
 uv sync
 uv run python src/download_sources.py
 uv run python src/extract.py data/raw/html
-uv run python src/extract_pdf.py data/raw/pdf
+uv run python src/extract_pdfs.py data/raw/pdf
 uv run python src/prepare_chunks.py
 uv run python src/spotcheck_chunks.py
 ```
@@ -184,7 +186,7 @@ Key outputs after running the ingestion, chunk-preparation, and spot-check workf
     - local file path
     - retrieval time
     - HTTP content type
-    - manifest metadata (audience, tags)
+    - manifest metadata (including audience, size, and role tags)
     - status code
     - SHA-256 hash
 
@@ -196,11 +198,11 @@ Key outputs after running the ingestion, chunk-preparation, and spot-check workf
 
 - **Audience-aware design**
 
-  The manifest’s `audience_tag` field defines a deterministic audience label per document. This label is used when preparing the retrieval corpus so that chunks carry audience metadata, supporting audience-aware retrieval and evaluation.
+  The manifest’s `size_audience_tag` and `role_audience_tags` fields define deterministic audience metadata per document along two dimensions (organisation size and AI responsibility). These fields are used when preparing the retrieval corpus so that chunks carry audience metadata, supporting audience-aware retrieval and evaluation.
 
 - **Manual chunk QA**
 
-  After `data/chunks/chunks.jsonl` is produced, a small sample of chunks can be exported for manual inspection. This spot-check is used to confirm that heading-aware chunking preserved section structure, audience metadata, and important list or table content across representative source types before retrieval indexing begins. [web:94][web:101]
+  After `data/chunks/chunks.jsonl` is produced, a small sample of chunks can be exported for manual inspection. This spot-check is used to confirm that heading-aware chunking preserved section structure, audience metadata, and important list or table content across representative source types before retrieval indexing begins.
 
 - **Reproducibility guarantees**
 
@@ -209,4 +211,4 @@ Key outputs after running the ingestion, chunk-preparation, and spot-check workf
   - Workflow: each ingestion and chunking step is driven by scripts whose commands and expected outputs are documented here and in `README.md`.
   - Manual steps: the manual review of extracted Markdown is explicitly described, and cleaned files are stored in `data/processed/` for inspection.
   - Retrieval corpus: the first-build chunks are produced deterministically from the cleaned Markdown and manifest, and written to `data/chunks/chunks.jsonl`.
-  - QA: a small documented spot-check step is included before retrieval indexing so intermediate corpus quality can be inspected, not only assumed. [web:97][web:101]
+  - QA: a small documented spot-check step is included before retrieval indexing so intermediate corpus quality can be inspected, not only assumed.

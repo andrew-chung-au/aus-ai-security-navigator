@@ -57,6 +57,8 @@ for row in manifest.itertuples(index=False):
             "audience": row.audience,
             "primary_use_case": row.primary_use_case,
             "topic_tags": row.topic_tags,
+            "size_audience_tag": row.size_audience_tag,
+            "role_audience_tags": row.role_audience_tags,
             "sha256": hashlib.sha256(content).hexdigest(),
         }
     )

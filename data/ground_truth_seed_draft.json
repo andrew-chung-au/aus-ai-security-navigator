@@ -1,0 +1,272 @@
+[
+  {
+    "source_id": "ai-introduction",
+    "target_size": "small_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "An introduction to artificial intelligence > What mitigations exist? > For individuals",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "When using AI systems, particularly generative AI, ASD recommends applying the same basic security principles as when using any online service.",
+    "why_this_passage": "While labeled for individuals, these fundamental security questions around tool reputation, privacy policies, and output verification represent the most practical guidance for small businesses and sole traders with minimal dedicated IT security resources.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-introduction",
+    "target_size": "medium_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "An introduction to artificial intelligence > What mitigations exist? > For organisations",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Organisations considering using or developing AI systems should approach their decision making as they would with any other information technology and evaluate the specific benefits, risks and consequences for their organisation.",
+    "why_this_passage": "This passage poses essential governance questions—covering cyber supply chain risks, accountability, privacy obligations, and Secure by Design principles—that suit medium businesses establishing structured AI policies.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-introduction",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "An introduction to artificial intelligence > Further information",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "For more information on best practices when implementing or considering the use of AI, the Digital Transformation Agency has released Interim guidance on government use of public generative AI tools.",
+    "why_this_passage": "This section points to enterprise-level governance frameworks such as the Information Security Manual (ISM), Essential Eight, and Digital Transformation Agency guidance, which directly apply to government departments and large critical infrastructure entities.",
+    "passage_type": "adoption"
+  },
+  {
+    "source_id": "engaging-with-ai",
+    "target_size": "small_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Engaging with artificial intelligence > Mitigation considerations for organisations > Does your organisation have suitably qualified staff to ensure the AI system is set-up, maintained and used securely?",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Staff that use the system should be trained on what data can and cannot be input to the system, for example, personally identifiable information or the organisation’s intellectual property.",
+    "why_this_passage": "This passage provides foundational guidance on staff training and preventing accidental data leakage, which is typically the most immediate and manageable AI risk for small businesses relying on third-party tools.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "engaging-with-ai",
+    "target_size": "medium_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Engaging with artificial intelligence > Mitigation considerations for organisations > How will the system affect your organisation’s privacy and data protection obligations?",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "If using a third-party AI system, understand if your organisation’s inputs will be used to retrain the AI system’s model. Consider using private versions of the system, if available.",
+    "why_this_passage": "Medium businesses frequently integrate third-party SaaS AI solutions; this passage addresses data sovereignty and vendor agreements, which are key operational policy concerns for their scale.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "engaging-with-ai",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Engaging with artificial intelligence > Challenges when engaging with AI > Data Poisoning of an AI Model",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Data poisoning involves manipulating an AI model’s training data so that the model learns incorrect patterns and may misclassify data or produce inaccurate, biased or malicious outputs.",
+    "why_this_passage": "Large and critical organisations are far more likely to develop or fine-tune bespoke AI models in-house, making them the primary audience for mitigating complex, adversarial threats like training data poisoning.",
+    "passage_type": "risk"
+  },
+  {
+    "source_id": "secure-ai-development",
+    "target_size": "small_business",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Guidelines for secure AI system development > Who is responsible for developing secure AI?",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Users (whether ‘end users’, or providers incorporating an external AI component [5]) do not typically have sufficient visibility and/or expertise to fully understand, evaluate or address risks associated with systems they are using. As such, in line with ‘secure by design’ principles, providers of AI components should take responsibility for the security outcomes of users further down the supply chain.",
+    "why_this_passage": "Small businesses typically integrate third-party AI models or APIs without having deep internal security teams, making supply chain responsibility and user-provider risk dynamics highly relevant overview context for them.",
+    "passage_type": "overview"
+  },
+  {
+    "source_id": "secure-ai-development",
+    "target_size": "medium_business",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Guidelines for secure AI system development > 2. Secure development > Secure your supply chain",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "You assess and monitor the security of your AI supply chains across a system’s life cycle, and require suppliers to adhere to the same standards your own organisation applies to other software. If suppliers cannot adhere to your organisation’s standards, you act in accordance with your existing risk management policies.",
+    "why_this_passage": "Medium-sized businesses actively build software using external vendor dependencies and open-source libraries, making formal AI supply chain monitoring and supplier risk policies actionable and essential.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "secure-ai-development",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Guidelines for secure AI system development > 3. Secure deployment > Protect your model continuously",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Some applications, for example those involving very sensitive data, may require theoretical guarantees that can be difficult or expensive to apply. If appropriate, privacy-enhancing technologies (such as differential privacy or homomorphic encryption) can be used to explore or assure levels of risk associated with consumers, users and attackers having access to models and outputs.",
+    "why_this_passage": "Critical infrastructure, government bodies, and large enterprises handle high-sensitivity datasets where advanced, resource-intensive protections like differential privacy and homomorphic encryption are practically necessary.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-attacks-small",
+    "target_size": "small_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Defending against AI-enabled cyber attacks: Guidance for small businesses > Recommended actions for small businesses",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Identify a person or service provider that is responsible for maintaining the cyber security of your websites.",
+    "why_this_passage": "This passage directly targets small businesses with concrete questions to evaluate their IT providers.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-attacks-medium",
+    "target_size": "medium_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Defending against AI-enabled cyber attacks: Guidance for medium-sized businesses > Recommended actions - short-term",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Prepare and exercise plans to continue business operations during cyber security incidents, including testing the ability to rapidly block network traffic and reset all user passwords.",
+    "why_this_passage": "This passage offers concrete operational mitigation guidance tailored directly to medium-sized organizations actively managing internal IT controls and incident response capabilities.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-attacks-large",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Defending against AI-enabled cyber attacks: Guidance for government, critical infrastructure and large enterprises",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Malicious actors may use AI to discover vulnerabilities, develop exploits within hours, target many victims at once",
+    "why_this_passage": "This introductory passage directly addresses the document's primary audience of government and large enterprises, providing a clear overview of how threat actors leverage AI to accelerate risks and exploit vulnerabilities.",
+    "passage_type": "risk"
+  },
+  {
+    "source_id": "ai-small-business",
+    "target_size": "small_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Artificial intelligence for small business: Managing cyber security risks > AI cyber security checklist for small businesses",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "I understand the benefits and risks of integrating AI into my business. I know what business information can be safely shared with the AI tool. I have verified what data the AI tool collects and where it is stored.",
+    "why_this_passage": "This checklist provides directly applicable, actionable self-assessment items tailored specifically to small business owners adopting AI tools.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-ml-supply-chain",
+    "target_size": "small_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Artificial intelligence and machine learning: Supply chain risks and mitigations > Third-party services > Mitigations",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Perform thorough assessments of third party vendors, including reviewing their security practices, vulnerability management processes, and overall track record. Ongoing monitoring should ensure adherence to strong security practices.",
+    "why_this_passage": "Small businesses consuming off-the-shelf AI services rely heavily on external vendors, making vendor assessment and clear contractual expectations their primary focus.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-ml-supply-chain",
+    "target_size": "small_business",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Artificial intelligence and machine learning: Supply chain risks and mitigations > Machine learning models > Mitigations > Trusted and transparent sources",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Like data, use models from trusted and reputable providers where possible. It is a simple yet effective way to reduce the risk of poisoned or maliciously modified models but does not eliminate all risk.",
+    "why_this_passage": "Small business developers integrating pre-trained models need straightforward, high-impact guidance on verifying external model providers without incurring heavy infrastructure overhead.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-ml-supply-chain",
+    "target_size": "medium_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Artificial intelligence and machine learning: Supply chain risks and mitigations > Overview > Supply chain integrity assessment",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "In 2025 alone, there have been several high profile data leakages due to compromise of third-party services. A recent survey found that the majority of surveyed organisations had been impacted by AI-related data leaks.",
+    "why_this_passage": "As medium-sized organizations adopt AI across multiple teams, managing third-party data leakage and operational security risks becomes a critical management concern.",
+    "passage_type": "risk"
+  },
+  {
+    "source_id": "ai-ml-supply-chain",
+    "target_size": "medium_business",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Artificial intelligence and machine learning: Supply chain risks and mitigations > AI data > Risks > Data poisoning",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Data poisoning involves malicious modifications to data that can affect the final AI or ML model and its outputs or cause unintended system behaviour. Data poisoning can be hard to detect due to the size and complexity of datasets, especially if data is already compromised at the source.",
+    "why_this_passage": "Medium-sized businesses training or fine-tuning models on custom datasets face significant supply chain exposure to data integrity issues and poisoning during pipeline creation.",
+    "passage_type": "risk"
+  },
+  {
+    "source_id": "ai-ml-supply-chain",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Artificial intelligence and machine learning: Supply chain risks and mitigations > Overview > Supply chain integrity assessment",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Organisations should assess their AI and ML supply chain throughout an AI product or service’s lifecycle as part of their broader cyber security risk management strategy. Existing cyber security considerations that would apply to any new software, system or dataset still apply to AI and ML components.",
+    "why_this_passage": "Large enterprises and critical sector consumers mandate holistic, lifecycle-based supply chain governance integrated directly into enterprise risk management strategies.",
+    "passage_type": "overview"
+  },
+  {
+    "source_id": "ai-ml-supply-chain",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Artificial intelligence and machine learning: Supply chain risks and mitigations > Machine learning models > Mitigations > Reproducible builds",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "A reproducible build refers to when developers release the components of a model rather than the complete and compiled version, like a SBOM. By starting with the components instead of the full model, it is easier for users to interrogate the components, reducing the risk of poisoning or embedded malware.",
+    "why_this_passage": "High-assurance environments building mission-critical AI systems require advanced verification controls like reproducible builds and deep component interrogation to ensure end-to-end integrity.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "agentic-ai-adoption",
+    "target_size": "small_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Careful adoption of agentic AI services > Introduction > What is agentic AI?",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Agentic AI systems are intended to operate without continuous human intervention. While a human typically designs and configures the system, some agentic AI systems are also capable of autonomously creating, or ‘spawning’, sub-agents to accomplish specific sub-tasks.",
+    "why_this_passage": "Although the document primarily addresses large enterprise and critical infrastructure contexts, this basic operational summary provides small business consumers with the foundational context needed to evaluate agentic AI adoption.",
+    "passage_type": "overview"
+  },
+  {
+    "source_id": "agentic-ai-adoption",
+    "target_size": "small_business",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Careful adoption of agentic AI services > Best practices for securing agentic AI systems > Developing secure agents > Input management",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Strong input management controls can partially mitigate many common risks to LLM-based applications, including AI agents.",
+    "why_this_passage": "Developers at small businesses need essential, actionable developer practices like input validation and prompt sanitization that can be implemented quickly without complex enterprise infrastructure.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "agentic-ai-adoption",
+    "target_size": "medium_business",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Careful adoption of agentic AI services > Best practices for securing agentic AI systems > Operating agents securely > Monitoring and auditing",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Prevent agents from autonomously executing high-impact actions or outputs without prior human approval. Insert human-in-the-loop review or approval checkpoints for actions where the cost of error is high, such as system resets, network egress or deletion of critical records.",
+    "why_this_passage": "Medium business consumers adopting agentic AI need practical operational controls like human-in-the-loop oversight to avoid business disruption and unapproved high-stakes executions.",
+    "passage_type": "adoption"
+  },
+  {
+    "source_id": "agentic-ai-adoption",
+    "target_size": "medium_business",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Careful adoption of agentic AI services > Best practices for securing agentic AI systems > Developing secure agents > Manage third-party components",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Extensibility and flexibility are key components of AI agents. In many cases, third-party components or tools enhance extensibility and flexibility but increase the attack surface of the agent. Verification and management of third-party components of agentic applications can reduce the added risk.",
+    "why_this_passage": "Mid-sized development teams rely heavily on third-party tools and integrations; this passage provides clear guidance on managing supply chain and third-party risks.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "agentic-ai-adoption",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "Careful adoption of agentic AI services > Agentic AI security risks > Privilege risks",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Privilege risks are a key concern for agentic AI and strict adherence to the principle of least privilege is critical. Privileges assigned to agents directly determine the level of risk they can introduce. Poor management of privileges can expose organisations to privilege compromise, scope creep, identity spoofing and agent impersonation.",
+    "why_this_passage": "Enterprise and government consumers operating critical infrastructure face high-impact threats from confused deputy attacks and over-privileged agents accessing sensitive systems.",
+    "passage_type": "risk"
+  },
+  {
+    "source_id": "agentic-ai-adoption",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "Careful adoption of agentic AI services > Best practices for securing agentic AI systems > Designing secure agents > Identity management",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "Manage agents’ fine-grained and varied privileges to operate agentic AI systems securely. Strong identity management mechanisms help operators maintain control during implementation and operation. As such, developers should construct each agent as a distinct principal, a cryptographically anchored identity with its own unique keys or certificates.",
+    "why_this_passage": "System architects building mission-critical agentic infrastructure require enterprise-grade design principles such as cryptographic identity anchors, zero trust, and mutual TLS.",
+    "passage_type": "mitigation"
+  },
+  {
+    "source_id": "ai-data-security",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_consumer",
+    "best_heading_path_guess": "AI data security > Securing data throughout the AI system lifecycle",
+    "numbered_item_title_guess": null,
+    "anchor_quote": "This guidance is primarily developed for organizations that use AI systems in their day-to-day operations, including the Defense Industrial Base (DIB), National Security System (NSS) owners, Federal Civilian Executive Branch (FCEB) agencies, and critical infrastructure owners and operators. Implementing these mitigations can help secure AI-enabled systems and protect proprietary, sensitive, and/or mission critical data.",
+    "why_this_passage": "This section explicitly targets government entities, defense contractors, and critical infrastructure operators consuming AI systems. It establishes the high-stakes operational context and regulatory scope that define enterprise-level AI adoption.",
+    "passage_type": "overview"
+  },
+  {
+    "source_id": "ai-data-security",
+    "target_size": "large_enterprise_gov_critical",
+    "target_role": "ai_builder",
+    "best_heading_path_guess": "AI data security > Best practices to secure data for AI-based systems",
+    "numbered_item_title_guess": "4. Leverage trusted infrastructure",
+    "anchor_quote": "Use a trusted computing environment that leverages Zero Trust architecture. Provide secure enclaves for data processing and keep sensitive information protected and unaltered during computations.",
+    "why_this_passage": "Large enterprise and government builders engineering AI systems for sensitive or classified workloads require high-assurance hardware enclaves and Zero Trust architecture. This passage defines the specific infrastructure controls necessary for mission-critical AI development environments.",
+    "passage_type": "mitigation"
+  }
+]

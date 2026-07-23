@@ -8,11 +8,11 @@ Australian organisations now have access to a growing set of ACSC guidance on ar
 
 A general LLM can provide broad advice, but it may miss the specific ACSC publication, audience context, or operational detail needed for a trustworthy answer. This project addresses that gap by building a retrieval-augmented assistant over a curated ACSC AI guidance corpus, so users can ask natural-language questions and receive answers grounded in the relevant source documents.
 
-The project is designed for questions where retrieval adds clear value over generic generation, especially when the answer depends on document-specific guidance, audience type, or operational recommendations. It focuses on making ACSC AI guidance easier to access, compare, and use without requiring users to manually search across multiple HTML pages and PDF attachments.
+The project is designed for questions where retrieval adds clear value over generic generation, especially when the answer depends on document-specific guidance, organisation size, role context, or operational recommendations. It focuses on making ACSC AI guidance easier to access, compare, and use without requiring users to manually search across multiple HTML pages and PDF attachments.
 
 ## Project scope
 
-This project focuses on a small, curated ACSC AI guidance corpus rather than a broad crawl of cyber-security content. The aim is to build a retrieval flow that is narrow enough to evaluate clearly, but broad enough to cover key AI security guidance for different organisation types.
+This project focuses on a small, curated ACSC AI guidance corpus rather than a broad crawl of cyber security content. The aim is to build a retrieval flow that is narrow enough to evaluate clearly, but broad enough to cover key AI security guidance for different organisation types and use contexts.
 
 The current first-build corpus includes:
 - Core ACSC AI HTML guidance pages
@@ -24,7 +24,7 @@ Boundary documents are recorded for possible later expansion, but are excluded f
 
 ## Dataset and decisions
 
-The corpus is defined in `data/source_manifest_core.csv` and built from public ACSC AI guidance sources. Source selection, corpus boundaries, chunking assumptions, and project decisions are documented in:
+The corpus is defined in `data/source_manifest_core.csv` and built from public ACSC AI guidance sources. Source selection, corpus boundaries, chunking assumptions, schema updates, and project decisions are documented in:
 
 - `docs/dataset-notes.md`
 - `docs/decisions.md`
@@ -37,6 +37,21 @@ These documents record:
 - the retrieval chunk schema
 - the reasoning behind project scope decisions
 
+## Audience-aware design
+
+The project treats ACSC AI guidance as an audience-aware corpus. Instead of using a single audience label, the manifest now separates audience context into two dimensions:
+
+- `size_audience_tag`
+  - `small_business`
+  - `medium_business`
+  - `large_enterprise_gov_critical`
+  - `all_sizes`
+- `role_audience_tags`
+  - `ai_consumer`
+  - `ai_builder`
+
+This allows the retrieval corpus to represent both organisational scale and role/responsibility. For example, a document may apply to organisations of all sizes while still being primarily relevant to AI builders, AI consumers, or both.
+
 ## Workflow
 
 The current workflow is:
@@ -46,8 +61,9 @@ The current workflow is:
 3. Extract HTML and PDF content into local Markdown files.
 4. Manually review and clean extracted content.
 5. Chunk the cleaned Markdown corpus into retrieval-ready records.
-6. Build and evaluate retrieval.
-7. Run the application or evaluation scripts.
+6. Spot-check sampled chunks for quality assurance.
+7. Build and evaluate retrieval.
+8. Run the application or evaluation scripts.
 
 This is a semi-manual workflow. Scripts perform downloading, extraction, and chunk preparation, while the corpus is manually reviewed before retrieval ingestion.
 
@@ -60,7 +76,7 @@ For reproducibility and step-by-step execution details, see `docs/reproducibilit
 ├── data/
 │   ├── raw/
 │   │   ├── html/
-│   │   └── pdfs/
+│   │   └── pdf/
 │   ├── processed/
 │   ├── chunks/
 │   ├── download_metadata.json
@@ -74,7 +90,8 @@ For reproducibility and step-by-step execution details, see `docs/reproducibilit
 │   ├── download_sources.py
 │   ├── extract.py
 │   ├── extract_pdfs.py
-│   └── chunk_markdown.py
+│   ├── prepare_chunks.py
+│   └── spotcheck_chunks.py
 ├── pyproject.toml
 ├── uv.lock
 └── README.md
@@ -91,7 +108,8 @@ Each chunk in `data/chunks/chunks.jsonl` uses the following minimum schema:
 - `source_file`
 - `document_title`
 - `heading_path`
-- `audience_tag`
+- `size_audience_tag`
+- `role_audience_tags`
 - `chunk_text`
 
 This schema preserves source provenance, section context, and audience metadata without overcomplicating the first build.
@@ -103,6 +121,7 @@ The chunking process is heading-aware rather than based only on fixed-size windo
 This project uses Python and `uv` for environment and dependency management.
 
 ### Requirements
+
 - Python 3.13
 - `uv`
 
@@ -133,7 +152,7 @@ uv run python src/extract.py data/raw/html
 ### 3. Extract PDF sources
 
 ```bash
-uv run python src/extract_pdfs.py data/raw/pdfs
+uv run python src/extract_pdfs.py data/raw/pdf
 ```
 
 ### 4. Manually review and clean extracted Markdown
@@ -152,13 +171,23 @@ After extraction, review the processed outputs and correct issues such as:
 uv run python src/prepare_chunks.py
 ```
 
+### 6. Spot-check sampled chunks
+
+```bash
+uv run python src/spotcheck_chunks.py
+```
+
+This exports sampled chunk records for manual inspection so chunk structure, heading paths, and propagated audience metadata can be checked before retrieval indexing.
+
 ## Outputs
 
 Key outputs include:
 - `data/raw/html/`
-- `data/raw/pdfs/`
+- `data/raw/pdf/`
 - `data/processed/`
 - `data/chunks/chunks.jsonl`
+- `data/chunks/spotcheck.jsonl`
+- `data/chunks/spotcheck.json`
 - `data/download_metadata.json`
 
 ## Reproducibility
@@ -170,6 +199,7 @@ This project is designed to be reproducible from a clean checkout.
 - Dependency versions are pinned in `pyproject.toml` and `uv.lock`.
 - The end-to-end workflow is documented in `docs/reproducibility.md`.
 - Retrieval chunks are produced from reviewed Markdown rather than directly from raw source files.
+- The retrieval corpus propagates organisation size and role tags from the manifest into each chunk.
 
 See `docs/reproducibility.md` for detailed setup and execution steps.
 
@@ -191,7 +221,8 @@ The project has completed:
 - corpus scoping and manifest definition
 - source downloading and extraction
 - manual Markdown cleanup
-- minimum chunk schema definition
+- retrieval schema refinement for audience-aware design
 - heading-aware chunk preparation for the first retrieval corpus
+- chunk spot-checking support for quality assurance
 
-Current work is focused on retrieval indexing, testing, and evaluation.
+Current work is focused on retrieval indexing, testing, evaluation, and synthetic ground-truth generation.

@@ -2,13 +2,11 @@
 import json
 from pathlib import Path
 
-# Config
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 input_path = PROJECT_ROOT / "data" / "chunks" / "chunks.jsonl"
 output_jsonl = PROJECT_ROOT / "data" / "chunks" / "spotcheck.jsonl"
 output_json = PROJECT_ROOT / "data" / "chunks" / "spotcheck.json"
 
-# Sources to include in the spot-check
 sources_to_sample = {
     "ai-attacks-small.md": 3,
     "ai-attacks-medium.md": 3,
@@ -20,11 +18,9 @@ sources_to_sample = {
 }
 
 def main():
-    # Track how many chunks we've taken per source_file
     counts = {src: 0 for src in sources_to_sample}
     sampled_rows = []
 
-    # Read JSONL line by line
     with input_path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -34,28 +30,36 @@ def main():
             try:
                 row = json.loads(line)
             except json.JSONDecodeError:
-                continue  # skip malformed lines
+                continue
 
             src_file = row.get("source_file")
             if src_file not in sources_to_sample:
                 continue
 
-            # Check if we still want more from this source
+            if "size_audience_tag" not in row:
+                raise ValueError(f"Missing size_audience_tag in chunk from {src_file}")
+
+            if "role_audience_tags" not in row:
+                raise ValueError(f"Missing role_audience_tags in chunk from {src_file}")
+
+            if not isinstance(row["role_audience_tags"], list):
+                raise ValueError(
+                    f"role_audience_tags is not a list in chunk from {src_file}"
+                )
+
             if counts[src_file] < sources_to_sample[src_file]:
                 sampled_rows.append(row)
                 counts[src_file] += 1
 
-            # Stop early if we've filled all quotas
             if all(counts[s] >= sources_to_sample[s] for s in sources_to_sample):
                 break
 
-    # Write JSONL output
     output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+
     with output_jsonl.open("w", encoding="utf-8") as f_out:
         for row in sampled_rows:
             f_out.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    # Write JSON array output
     with output_json.open("w", encoding="utf-8") as f_out_json:
         json.dump(sampled_rows, f_out_json, indent=2, ensure_ascii=False)
 
