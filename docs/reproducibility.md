@@ -1,16 +1,17 @@
 # Reproducibility
 
-This project is designed to be reproducible from a clean checkout using a documented environment, a manifest-defined dataset, a semi-manual extraction workflow, a structure-aware chunking process, a deterministic seed–chunk matching step, and a small LLM-assisted QA step before retrieval indexing and evaluation.
+This project is designed so that another person can recreate the environment, rebuild the corpus, and rerun the main pipelines from a clean checkout, using a manifest-defined dataset and a small set of scripts plus documented manual steps.
 
-Reproducible workflows benefit from clearly documented inputs, scripted transformations, and explicit validation points, especially where human or LLM judgement is part of the pipeline.
+The focus of this document is on environment, inputs, scripted transformations, manual checkpoints, and outputs — not on re-explaining the entire project design.
 
-## Environment
+---
+
+## 1. Environment
+
+### Requirements
 
 - Python 3.13
 - `uv` for environment and dependency management
-- Dependencies pinned in:
-  - `pyproject.toml`
-  - `uv.lock`
 
 ### Setup
 
@@ -20,333 +21,261 @@ From the project root:
 uv sync
 ```
 
-This creates the Python environment and installs all dependencies at the pinned versions.
+This creates the Python environment and installs all dependencies at the pinned versions defined in:
 
-## Data access
+- `pyproject.toml`
+- `uv.lock`
+
+These files are committed to the repository and should not be edited casually; they are part of the reproducibility contract.
+
+---
+
+## 2. Data & manifest
 
 ### Source manifest
 
-- The core dataset is defined in `data/source_manifest_core.csv`.
-- Each row describes a single ACSC source with fields such as:
-  - `source_id`
-  - `title`
-  - `url`
-  - `content_type` (`html` or `pdf`)
-  - `published_date`
-  - `audience`
-  - `primary_use_case`
-  - `topic_tags`
-  - `core`
-  - `boundary`
-  - `notes`
-  - `size_audience_tag` (organisation size / criticality, e.g. `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)
-  - `role_audience_tags` (role / responsibility, e.g. `ai_consumer`, `ai_builder`, or both, stored as a `;`-separated list)
+The core dataset is defined in:
+
+- `data/source_manifest_core.csv`
+
+Each row describes a single ACSC source with fields such as:
+
+- identifiers: `source_id`, `title`, `url`
+- metadata: `content_type` (`html` or `pdf`), `published_date`, `primary_use_case`, `topic_tags`
+- scope: `core`, `boundary`, `notes`
+- audience fields:
+  - `size_audience_tag` (e.g. `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)
+  - `role_audience_tags` (e.g. `ai_consumer`, `ai_builder`, or both; stored as a delimited list and normalised downstream)
+
+The manifest is the single source of truth for which ACSC documents are in scope for the first build and how they are tagged.
 
 ### Source documents
 
 - All sources are public ACSC HTML pages and PDF documents.
-- No private or local-only data is required; the dataset can be reconstructed by downloading from the URLs in the manifest.
+- No private or local-only data is required; a fresh clone can reconstruct the dataset by downloading from the URLs in `data/source_manifest_core.csv`.
 
-# aus-ai-security-navigator
+If ACSC updates the documents, a new run will reflect those updates; for strict reproduction, keep an archived copy of `data/raw/` from the original run.
 
-A lightweight retrieval-augmented generation (RAG) project that helps Australian organisations navigate official ACSC artificial intelligence security guidance. It brings together audience-specific ACSC HTML pages and PDF guidance so users can ask natural-language questions and retrieve grounded answers from the source material.
+---
 
-## Problem statement
+## 3. Pipelines & scripts
 
-Australian organisations now have access to a growing set of ACSC guidance on artificial intelligence, but the material is distributed across multiple documents, formats, and audience-specific publications. This makes it harder to quickly find the right guidance for a specific question, such as how a small business should adopt AI securely, what supply chain risks apply to an AI system, or what controls matter for AI-enabled cyber attacks.
+This section describes how to move from a clean checkout to a retrieval-ready corpus and evaluation data. It assumes `uv sync` has already been run.
 
-A general LLM can provide broad advice, but it may miss the specific ACSC publication, audience context, or operational detail needed for a trustworthy answer. This project addresses that gap by building a retrieval-augmented assistant over a curated ACSC AI guidance corpus, so users can ask natural-language questions and receive answers grounded in the relevant source documents.
+### 3.1 Download and extract sources
 
-The project is designed for questions where retrieval adds clear value over generic generation, especially when the answer depends on document-specific guidance, organisation size, role context, or operational recommendations. It focuses on making ACSC AI guidance easier to access, compare, and use without requiring users to manually search across multiple HTML pages and PDF attachments.
+1. **Download HTML and PDF sources**
 
-## Project scope
+   ```bash
+   uv run python src/download_sources.py
+   ```
 
-This project focuses on a small, curated ACSC AI guidance corpus rather than a broad crawl of cyber security content. The aim is to build a retrieval flow that is narrow enough to evaluate clearly, but broad enough to cover key AI security guidance for different organisation types and use contexts.
+   - Reads `data/source_manifest_core.csv`.
+   - Downloads HTML pages into `data/raw/html/`.
+   - Downloads PDFs into `data/raw/pdf/`.
+   - Writes `data/download_metadata.json` with basic provenance for each download.
 
-The current first-build corpus includes:
-- Core ACSC AI HTML guidance pages
-- Attached ACSC PDF guidance on defending against AI-enabled cyber attacks
-- A manifest-defined source list with provenance and audience metadata
-- A cleaned Markdown corpus used for chunking, retrieval, and evaluation
+2. **Extract HTML to Markdown**
 
-Boundary documents are recorded for possible later expansion, but are excluded from the first index build.
+   ```bash
+   uv run python src/extract.py data/raw/html
+   ```
 
-## Dataset and decisions
+   - Parses HTML content.
+   - Writes cleaned Markdown (first pass) to `data/processed/`.
 
-The corpus is defined in `data/source_manifest_core.csv` and built from public ACSC AI guidance sources. Source selection, corpus boundaries, chunking assumptions, schema updates, and project decisions are documented in:
+3. **Extract PDFs to Markdown**
 
-- `docs/dataset-notes.md`
-- `docs/decisions.md`
-- `docs/project-log.md`
+   ```bash
+   uv run python src/extract_pdfs.py data/raw/pdf
+   ```
 
-These documents record:
-- the first-build source set
-- the distinction between core and boundary sources
-- the audience-aware corpus design
-- the retrieval chunk schema
-- the seed-matching and evaluation-data design
-- the reasoning behind project scope decisions
+   - Extracts text from PDFs.
+   - Writes cleaned Markdown (first pass) to `data/processed/`.
 
-## Audience-aware design
+At this point, all core sources exist as Markdown files in `data/processed/`.
 
-The project treats ACSC AI guidance as an audience-aware corpus. Instead of using a single audience label, the manifest separates audience context into two dimensions:
+### 3.2 Manual Markdown review
 
-- `size_audience_tag`
-  - `small_business`
-  - `medium_business`
-  - `large_enterprise_gov_critical`
-  - `all_sizes`
-- `role_audience_tags`
-  - `ai_consumer`
-  - `ai_builder`
+After extraction, perform a one-time manual review of the processed Markdown files to correct extraction artefacts. Typical corrections:
 
-This allows the retrieval corpus to represent both organisational scale and role/responsibility. For example, a document may apply to organisations of all sizes while still being primarily relevant to AI builders, AI consumers, or both.
-
-## Evaluation design
-
-The project also includes an evaluation-data pipeline based on a curated seed-passage workflow.
-
-The current evaluation design is:
-
-1. Create a curated seed manifest (`data/ground_truth_seed_draft.json`) describing important passages to test across:
-   - `source_id`
-   - `target_size`
-   - `target_role`
-   - `passage_type`
-   - `best_heading_path_guess`
-   - optional `numbered_item_title_guess`
-   - optional `anchor_quote`
-2. Match each seed to a concrete chunk in `data/chunks/chunks.jsonl`.
-3. Vet the matched chunk as a seed passage using an LLM judge.
-4. Use accepted seed passages later for A → Q* question generation and retrieval / RAG evaluation.
-
-This keeps the evaluation pipeline traceable: each future test question can be linked back to a concrete `chunk_id`, source document, and audience slice.
-
-## Workflow
-
-The current workflow is:
-
-1. Define and maintain the source manifest.
-2. Download source documents from public ACSC URLs.
-3. Extract HTML and PDF content into local Markdown files.
-4. Manually review and clean extracted content.
-5. Chunk the cleaned Markdown corpus into retrieval-ready records.
-6. Spot-check sampled chunks for quality assurance.
-7. Create a seed manifest for important passages to test.
-8. Match seeds to concrete chunks.
-9. Vet candidate seed passages with an LLM judge.
-10. Build and evaluate retrieval.
-11. Run the application or evaluation scripts.
-
-This is a semi-manual workflow. Scripts perform downloading, extraction, chunk preparation, and deterministic seed matching, while the corpus is manually reviewed before retrieval ingestion and seed suitability is checked with an LLM-assisted evaluation step.
-
-For reproducibility and step-by-step execution details, see `docs/reproducibility.md`.
-
-## Repository structure
-
-```text
-.
-├── data/
-│   ├── raw/
-│   │   ├── html/
-│   │   └── pdf/
-│   ├── processed/
-│   ├── chunks/
-│   ├── download_metadata.json
-│   ├── source_manifest_core.csv
-│   ├── ground_truth_seed_draft.json
-│   └── seed_chunk_candidates.json
-├── docs/
-│   ├── dataset-notes.md
-│   ├── decisions.md
-│   ├── project-log.md
-│   └── reproducibility.md
-├── src/
-│   ├── download_sources.py
-│   ├── extract.py
-│   ├── extract_pdfs.py
-│   ├── prepare_chunks.py
-│   ├── spotcheck_chunks.py
-│   └── match_seeds_to_chunks.py
-├── pyproject.toml
-├── uv.lock
-└── README.md
-```
-
-## Retrieval corpus
-
-The first retrieval-ready corpus is written to:
-
-- `data/chunks/chunks.jsonl`
-
-Each chunk in `data/chunks/chunks.jsonl` uses the following minimum schema:
-
-- `chunk_id`
-- `source_id`
-- `source_file`
-- `chunk_index`
-- `chunking_version`
-- `document_title`
-- `heading_path`
-- `size_audience_tag`
-- `role_audience_tags`
-- `chunk_text`
-
-This schema preserves source provenance, section context, and audience metadata without overcomplicating the first build.
-
-The chunking process is heading-aware rather than based only on fixed-size windows. It preserves Markdown structure where practical, keeps lists intact, and can split long enumerated sections into item-level chunks when that improves retrieval focus.
-
-## Seed matching and vetting
-
-The evaluation pipeline introduces a seed–chunk resolution step before synthetic question generation.
-
-The current flow is:
-
-- `data/ground_truth_seed_draft.json` stores curated evaluation seeds.
-- `src/match_seeds_to_chunks.py` resolves each seed to a concrete chunk in `data/chunks/chunks.jsonl`.
-- When `numbered_item_title_guess` is present, the resolver gives it strong precedence by first narrowing to chunks whose last heading matches that numbered item after loose normalization.
-- Matching outputs are written to `data/seed_chunk_candidates.json`.
-- An LLM judge then reviews each matched `candidate_chunk` and decides whether it should be included as an evaluation seed passage.
-
-This helps ensure that later generated questions are grounded in passages that are coherent, audience-appropriate, and linked to stable chunk identifiers.
-
-## Setup
-
-This project uses Python and `uv` for environment and dependency management.
-
-### Requirements
-
-- Python 3.13
-- `uv`
-
-### Install dependencies
-
-```bash
-uv sync
-```
-
-Dependencies and versions are specified in:
-- `pyproject.toml`
-- `uv.lock`
-
-## Usage
-
-### 1. Download sources
-
-```bash
-uv run python src/download_sources.py
-```
-
-### 2. Extract HTML sources
-
-```bash
-uv run python src/extract.py data/raw/html
-```
-
-### 3. Extract PDF sources
-
-```bash
-uv run python src/extract_pdfs.py data/raw/pdf
-```
-
-### 4. Manually review and clean extracted Markdown
-
-After extraction, review the processed outputs and correct issues such as:
-- broken headings
-- repeated headers or footers
-- missing or malformed lists
+- broken or missing headings
+- repeated headers, footers, or navigation text
 - duplicated paragraphs
+- missing or malformed lists
 - table structure problems
 - PDF reading-order issues
 
-### 5. Build retrieval chunks
+The goal is to fix extraction noise, not to rewrite content. The reviewed files form the “cleaned corpus” used by the chunker.
 
-```bash
-uv run python src/prepare_chunks.py
-```
+### 3.3 Chunk preparation
 
-### 6. Spot-check sampled chunks
+4. **Prepare retrieval-ready chunks**
 
-```bash
-uv run python src/spotcheck_chunks.py
-```
+   ```bash
+   uv run python src/prepare_chunks.py
+   ```
 
-This exports sampled chunk records for manual inspection so chunk structure, heading paths, and propagated audience metadata can be checked before retrieval indexing.
+   - Reads cleaned Markdown from `data/processed/`.
+   - Applies a heading-aware, structure-preserving chunking strategy.
+   - Builds chunk records with fields such as:
+     - `chunk_id`
+     - `source_id`, `source_file`
+     - `chunk_index`, `chunking_version`
+     - `document_title`, `heading_path`
+     - `size_audience_tag`, `role_audience_tags` (copied from the manifest)
+     - `chunk_text`
+     - diagnostic fields (`chunk_chars`, `chunk_words`, `chunk_lines`)
+   - Writes the retrieval-ready corpus to `data/chunks/chunks.jsonl`.
 
-### 7. Match evaluation seeds to chunks
+This JSONL file is the canonical text representation of the retrieval corpus.
 
-```bash
-uv run python src/match_seeds_to_chunks.py
-```
+### 3.4 Chunk spot-check
 
-This resolves each curated seed passage to a concrete chunk and records debug information about the match.
+5. **Export sampled chunks for manual QA**
 
-### 8. Vet matched seed passages
+   ```bash
+   uv run python src/spotcheck_chunks.py
+   ```
 
-Run the LLM judging step over `data/seed_chunk_candidates.json` to determine which candidate chunks should be included for evaluation.
+   - Reads `data/chunks/chunks.jsonl`.
+   - Writes sampled chunks to:
+     - `data/chunks/spotcheck.jsonl`
+     - `data/chunks/spotcheck.json`
 
-This produces a vetted seed file (for example `data/ground_truth_seeds_vetted.jsonl`) that can later be used for synthetic question generation.
+Use these files to manually check that:
 
-## Outputs
+- `heading_path` matches the cleaned Markdown structure.
+- `size_audience_tag` and `role_audience_tags` are correctly propagated.
+- lists and tables are not badly broken.
+- paired risk / mitigation sections remain coherent where intended.
 
-Key outputs include:
-- `data/raw/html/`
-- `data/raw/pdf/`
-- `data/processed/`
-- `data/chunks/chunks.jsonl`
-- `data/chunks/spotcheck.jsonl`
-- `data/chunks/spotcheck.json`
-- `data/ground_truth_seed_draft.json`
-- `data/seed_chunk_candidates.json`
-- `data/download_metadata.json`
+This is a lightweight QA step between chunking and retrieval indexing.
 
-Additional evaluation outputs are expected to include:
-- a vetted seed file (for example `data/ground_truth_seeds_vetted.jsonl`)
-- a future question-level ground-truth file (for example `data/ground_truth_questions.jsonl`)
+### 3.5 Seed matching and vetting
 
-## Reproducibility
+6. **Define seed configuration**
 
-This project is designed to be reproducible from a clean checkout.
+   - Edit `data/ground_truth_seed_draft.json` to describe important passages and audience slices to test.
+   - Each seed includes fields such as:
+     - `source_id`
+     - `target_size`, `target_role`
+     - `passage_type`
+     - `why_this_passage`
+     - `best_heading_path_guess`
+     - optional `numbered_item_title_guess`
+     - optional `anchor_quote`
 
-- Source documents are public ACSC HTML and PDF documents.
-- The first-build corpus is defined in `data/source_manifest_core.csv`.
-- Dependency versions are pinned in `pyproject.toml` and `uv.lock`.
-- The end-to-end workflow is documented in `docs/reproducibility.md`.
-- Retrieval chunks are produced from reviewed Markdown rather than directly from raw source files.
-- The retrieval corpus propagates organisation size and role tags from the manifest into each chunk.
-- Evaluation seeds are resolved deterministically to chunk candidates before LLM-based seed vetting.
+7. **Match seeds to concrete chunks**
 
-See `docs/reproducibility.md` for detailed setup and execution steps.
+   ```bash
+   uv run python src/match_seeds_to_chunks.py
+   ```
 
-## Evaluation criteria mapping
+   - Reads `data/chunks/chunks.jsonl` and `data/ground_truth_seed_draft.json`.
+   - Resolves each seed to a specific chunk `chunk_id`, preferring numbered list items when `numbered_item_title_guess` is present.
+   - Writes candidates and debug information to `data/seed_chunk_candidates.json`.
 
-This section maps the project to the course evaluation criteria.
+8. **Vet seed passages with an LLM judge**
 
-- **Problem description**: see `## Problem statement`
-- **Ingestion pipeline**: see `## Workflow`
-- **Corpus design and scope**: see `## Project scope` and `docs/dataset-notes.md`
-- **Project decisions**: see `docs/decisions.md` and `docs/project-log.md`
-- **Reproducibility**: see `## Reproducibility` and `docs/reproducibility.md`
-- **Evaluation design**: see `## Evaluation design`, `## Seed matching and vetting`, and `docs/project-log.md`
+   - Run the LLM judging step (using `src/llm_client.py` and a small evaluation script) over `data/seed_chunk_candidates.json`.
+   - Produce a vetted seed file such as `data/ground_truth_seeds_vetted.jsonl`, including:
+     - `include_for_eval`
+     - `seed_quality`
+     - `suggested_passage_type`
+     - `reason`.
 
-Additional sections can be expanded as retrieval evaluation and the application layer are completed.
+This ensures that only coherent, audience-appropriate passages are used for synthetic question generation.
 
-## Status
+### 3.6 Synthetic question generation
 
-The project has completed:
-- corpus scoping and manifest definition
-- source downloading and extraction
-- manual Markdown cleanup
-- retrieval schema refinement for audience-aware design
-- heading-aware chunk preparation for the first retrieval corpus
-- chunk spot-checking support for quality assurance
-- initial seed-manifest creation for evaluation passages
-- deterministic seed-to-chunk matching
-- first-pass LLM seed vetting
+9. **Generate ground-truth questions (A → Q\*)**
 
-Current work is focused on:
-- retrieval indexing and testing
-- A → Q* synthetic ground-truth generation
-- retrieval evaluation (for example Hit Rate and MRR)
-- RAG answer evaluation
-- application / interface implementation
+   ```bash
+   uv run python src/generate_ground_truth_questions.py
+   ```
+
+   - Reads vetted seeds from `data/ground_truth_seeds_vetted.jsonl`.
+   - Uses `candidate_chunk` content plus audience metadata to generate realistic questions.
+   - Writes outputs to `data/ground_truth_synthetic.jsonl`, preserving:
+     - `chunk_id`
+     - `source_id`
+     - `size_audience_tag`, `role_audience_tags`
+     - `target_size`, `target_role`
+     - generated question text.
+
+Batch generation is paced (e.g. fixed delay between requests) and uses retry handling in the shared LLM client to respect rate limits.
+
+### 3.7 Retrieval index (PostgreSQL)
+
+10. **Initialise the database schema**
+
+   ```bash
+   uv run python src/db_init.py
+   ```
+
+   - Creates the `chunks` table with the current schema.
+   - Adds indexes on full-text search and audience metadata.
+
+11. **Load chunks into PostgreSQL**
+
+   ```bash
+   uv run python src/db_load_chunks.py
+   ```
+
+   - Reads `data/chunks/chunks.jsonl`.
+   - Normalises `heading_path` and `role_audience_tags` into JSON arrays.
+   - Builds `search_text` from titles, headings, audience tags, and `chunk_text`.
+   - Upserts rows into the `chunks` table keyed by `chunk_id`.
+
+12. **Run baseline retrieval**
+
+   ```bash
+   uv run python src/retrieve_text.py "your query"
+   ```
+
+   - Uses PostgreSQL full-text search and ranking.
+   - Supports optional `--size-tag` and `--role-tag` filters.
+   - Returns top‑k chunks (default `k=5`, configurable) for inspection and evaluation.
+
+---
+
+## 4. Outputs
+
+By following the steps above, a fresh checkout can reproduce the main data artefacts:
+
+- Raw downloads:
+  - `data/raw/html/`
+  - `data/raw/pdf/`
+- Cleaned corpus:
+  - `data/processed/` (Markdown)
+- Chunk corpus:
+  - `data/chunks/chunks.jsonl`
+  - `data/chunks/spotcheck.jsonl`
+  - `data/chunks/spotcheck.json`
+- Evaluation configuration and data:
+  - `data/ground_truth_seed_draft.json`
+  - `data/seed_chunk_candidates.json`
+  - `data/ground_truth_seeds_vetted.jsonl`
+  - `data/ground_truth_synthetic.jsonl`
+- Retrieval index:
+  - PostgreSQL `chunks` table populated from `data/chunks/chunks.jsonl`
+  - baseline retrieval behaviour via `src/retrieve_text.py`.
+
+---
+
+## 5. What another person can reproduce
+
+From a clean clone, another practitioner can:
+
+1. Create the same Python environment with `uv sync`.
+2. Download the same ACSC sources using the manifest.
+3. Extract and manually review Markdown in `data/processed/`.
+4. Regenerate `data/chunks/chunks.jsonl` via heading-aware chunking.
+5. Spot-check sampled chunks before indexing.
+6. Recreate the seed configuration, seed–chunk matches, and vetted seeds.
+7. Regenerate synthetic ground-truth questions.
+8. Build and populate the PostgreSQL `chunks` table.
+9. Run baseline retrieval over the synthetic question set and manual test queries.
+
+Project design details (problem framing, dataset notes, decisions, and log) are documented separately in `docs/dataset-notes.md`, `docs/decisions.md`, and `docs/project-log.md` so this file can stay focused on “how to reproduce” rather than “why the project is structured this way”.

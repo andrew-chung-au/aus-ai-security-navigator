@@ -274,3 +274,120 @@ Skipping these steps would simplify the pipeline but:
 - Downstream evaluation (question generation, retrieval metrics, RAG answer scoring) can rely on:
   - stable `chunk_id`s for relevance labels, and
   - a set of seed passages that have been explicitly checked for coherence, audience fit, and question potential.
+
+  ## D-006 — Retrieval index and PostgreSQL-backed search
+Date: 2026-07-23  
+Status: Accepted
+
+
+### Decision
+Store the chunked corpus in a PostgreSQL database and use PostgreSQL full-text search as the first retrieval mechanism over the `chunks` table, with audience-aware filters on organisation size and role.
+
+The database layer is implemented with:
+
+- a small helper module (`src/db.py`) exposing `get_db_connection()`, and  
+- two scripts:
+  - `src/db_init.py` — schema and index creation
+  - `src/db_load_chunks.py` — corpus loading and upsert.
+
+
+### Reason
+Moving from a JSONL-only corpus to a PostgreSQL-backed index:
+
+- makes retrieval reproducible and queryable with standard SQL,
+- simplifies audience-aware filtering and debugging against concrete tables,
+- aligns with course monitoring patterns while staying lightweight enough for a small project.
+
+Using PostgreSQL’s `tsvector`/`tsquery` full-text search and ranking (`ts_rank` plus `websearch_to_tsquery`) provides:
+
+- reasonable default search behaviour for user-style queries, and
+- a clear baseline before introducing more complex embedding-based retrieval.
+
+
+### Alternatives considered
+- Keep retrieval purely file-based over `chunks.jsonl` using in-memory search.
+- Introduce a vector database or embedding index immediately.
+- Use a search engine (for example, an external SaaS index) instead of PostgreSQL.
+
+
+### Trade-offs
+A PostgreSQL-backed index:
+
+- adds a small amount of setup (schema creation, loader scripts), but
+- keeps deployment simple, maintains a single source of truth for chunks, and
+- enables both lexical search and metadata filtering without extra infrastructure.
+
+Jumping straight to a vector database would add more moving parts and tooling without first validating that the corpus and metadata structure support good retrieval behaviour.
+
+### Impact
+- The `chunks` table schema becomes the canonical retrieval schema, including:
+  - `chunk_id` (primary key)
+  - `source_id`, `source_file` (NOT NULL)
+  - `chunk_index`, `chunking_version`
+  - `document_title`, `heading_path` (JSONB)
+  - `size_audience_tag`
+  - `role_audience_tags` (JSONB)
+  - `chunk_text` and diagnostics (`chunk_chars`, `chunk_words`, `chunk_lines`)
+  - `search_text` and a generated `fts` `tsvector` column.
+- Loader scripts (`src/db_load_chunks.py`) upsert rows so the table can be rebuilt safely when the corpus changes.
+- Indexes on `fts`, `source_id`, `size_audience_tag`, and `role_audience_tags` support efficient search and audience-aware filtering.
+- Future retrieval approaches (vector or hybrid) can reuse the same canonical chunk schema.
+
+
+---
+
+
+## D-007 — Baseline audience-aware text retrieval helper
+Date: 2026-07-23  
+Status: Accepted
+
+
+### Decision
+Implement a simple audience-aware text retrieval helper (`src/retrieve_text.py`) that:
+
+- uses PostgreSQL full-text search (`fts @@ websearch_to_tsquery('english', query)`),
+- ranks results with `ts_rank(fts, websearch_to_tsquery('english', query), 1)`,
+- applies optional filters on:
+  - `size_audience_tag` (with `all_sizes` as a fall-back), and
+  - `role_audience_tags` (JSON array containment),
+- returns top‑k chunks (default `k=5`, configurable) as dictionaries for inspection, evaluation, and answer synthesis.
+
+
+### Reason
+The project needs a practical, inspectable retrieval baseline before adding more complex ranking or embedding logic. A dedicated helper script:
+
+- makes retrieval behaviour explicit and easy to test at the command line,
+- supports audience-aware queries (small vs medium vs large/gov, consumer vs builder),
+- provides a clear interface that can later be reused by the LLM-facing answer generation logic.
+
+Using `websearch_to_tsquery` gives intuitive search semantics for human-style queries, while `ts_rank` provides a simple relevance score for ordering results. Keeping `k` tunable (default 5, but overrideable) mirrors the course pattern and allows experimentation with different top‑k settings for evaluation and answer quality.
+
+
+### Alternatives considered
+- Use a custom scoring function over raw text without PostgreSQL full-text search.
+- Implement embedding-based semantic search first and skip lexical search.
+- Hard-code a single `k` value for all retrieval use-cases.
+
+
+### Trade-offs
+A simple full-text helper:
+
+- is quick to implement and easy to debug,
+- leverages existing PostgreSQL features and the `fts` index, and
+- provides a transparent baseline that can be inspected with SQL and CLI tools.
+
+Starting with embeddings would add complexity and make it harder to separate corpus and schema issues from embedding quality. Hard-coding `k` without a CLI parameter would restrict experimentation during evaluation.
+
+### Impact
+- `src/retrieve_text.py` becomes the canonical interface for:
+  - manual sanity checks (“does this query bring back the right guidance?”),
+  - synthetic retrieval evaluation (Hit Rate, MRR) over ground-truth questions, and
+  - feeding top‑k chunks into the LLM in later RAG answer flows.
+- The script supports queries such as:
+  - “how should a small business reduce AI data leak risk”
+  - “internet-facing services patching” with `size_tag=medium_business`
+  - “training data integrity and provenance” with `role_tag=ai_builder`
+  - “agentic AI security controls” scoped to `large_enterprise_gov_critical` and `ai_builder`.
+- Manual tests confirm that top-ranked chunks match expectations for these queries, increasing confidence in the baseline retrieval behaviour before formal evaluation.
+
+

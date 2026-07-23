@@ -327,3 +327,121 @@ Make synthetic question generation more stable under API rate limits.
 ### Next step
 Commit the documentation and pipeline updates, then proceed to retrieval evaluation.
 
+## 2026-07-23 — Retrieval index and PostgreSQL setup
+
+
+### Goal
+Move from a JSONL chunk corpus to a reproducible, queryable retrieval index backed by PostgreSQL.
+
+### What was done
+- Chose PostgreSQL as the retrieval database and aligned it with the monitoring lessons from the course.
+- Added a small database helper module `src/db.py` that:
+  - loads environment variables from `.env` (including `DATABASE_URL`)
+  - exposes a single `get_db_connection()` function using `psycopg[binary]`.
+- Implemented `src/db_init.py` to:
+  - create the `vector` extension if it is not already present
+  - create a `chunks` table with the current schema:
+    - `chunk_id` (primary key)
+    - `source_id` (NOT NULL)
+    - `source_file` (NOT NULL)
+    - `chunk_index`
+    - `chunking_version`
+    - `document_title`
+    - `heading_path` (JSONB)
+    - `size_audience_tag`
+    - `role_audience_tags` (JSONB)
+    - `chunk_text` (NOT NULL)
+    - `chunk_chars`, `chunk_words`, `chunk_lines`
+    - `search_text` (NOT NULL)
+    - `fts` (generated `tsvector` from `search_text` for full-text search)
+  - create supporting indexes:
+    - GIN index on `fts` for text search
+    - B-tree index on `source_id`
+    - B-tree index on `size_audience_tag`
+    - GIN index on `role_audience_tags`.
+- Implemented `src/db_load_chunks.py` to:
+  - read `data/chunks/chunks.jsonl`
+  - normalise `heading_path` and `role_audience_tags` into JSON arrays
+  - build a `search_text` field combining:
+    - `document_title`
+    - joined `heading_path`
+    - audience tags (`size_audience_tag`, `role_audience_tags`)
+    - `chunk_text`
+  - upsert rows into the `chunks` table keyed by `chunk_id` (using `ON CONFLICT`).
+- Ran the initial database bootstrap and load:
+  - `uv run python src/db_init.py`
+  - `uv run python src/db_load_chunks.py`
+- Verified the database state via `psql`:
+  - confirmed the presence of `chunks` (and removed an older `items` table)
+  - checked that `SELECT COUNT(*) FROM chunks;` returns the expected row count
+  - inspected the largest chunks by word count to keep an eye on very large passages.
+
+### Why
+- Storing the chunk corpus in PostgreSQL makes retrieval reproducible and queryable with standard SQL.
+- Using `search_text` + `fts` keeps the schema simple while supporting effective full-text search.
+- Upserts keyed by `chunk_id` allow rerunning the loader safely whenever the corpus changes.
+- Explicit indexes on text search and audience metadata support efficient retrieval and filtering.
+
+### Problems / uncertainties
+- Some chunks remain long (hundreds of words); they work for v1 but may later need targeted splitting.
+- The full-text index currently uses the default English configuration; this is acceptable for v1 but may be tuned later if retrieval behaviour suggests it.
+
+### Next step
+Add a small retrieval helper script over the `chunks` table and then run retrieval evaluation over the synthetic question set.
+
+
+## 2026-07-23 — Baseline text retrieval helper
+
+
+### Goal
+Implement a simple, audience-aware text retrieval script over the PostgreSQL `chunks` table.
+
+### What was done
+- Created `src/retrieve_text.py` as the first retrieval helper.
+- Implemented a function `retrieve_chunks(query, limit=5, size_tag=None, role_tag=None)` that:
+  - uses PostgreSQL full-text search:
+    - `fts @@ websearch_to_tsquery('english', %(query)s)`
+    - ranks results with `ts_rank(fts, websearch_to_tsquery('english', %(query)s), 1)`
+  - applies optional audience filters when provided:
+    - size:
+      - `(size_audience_tag = %(size_tag)s OR size_audience_tag = 'all_sizes')`
+    - role:
+      - `role_audience_tags @> %(role_tag_json)s::jsonb` (JSON array containment)
+  - returns rows as Python dictionaries using psycopg’s dict-row factory.
+- Implemented a small CLI wrapper using `argparse` so the script can be run as:
+  - `uv run python src/retrieve_text.py "query text"`
+  - `uv run python src/retrieve_text.py "query text" --size-tag medium_business`
+  - `uv run python src/retrieve_text.py "query text" --role-tag ai_builder`
+  - `uv run python src/retrieve_text.py "query text" --size-tag large_enterprise_gov_critical --role-tag ai_builder --limit 8`.
+- Added a human-readable result printer that shows:
+  - `chunk_id`, score
+  - `source_file`
+  - `document_title`
+  - `heading_path` (joined with ` > `)
+  - audience tags (`size_audience_tag`, `role_audience_tags`)
+  - `chunk_words`
+  - a truncated preview of `chunk_text`.
+
+### Why
+- Using `websearch_to_tsquery` gives user-style text search semantics (phrases, AND/OR, etc.) without complex query syntax.
+- `ts_rank` provides a simple relevance score to order results.
+- Audience filters make it easy to retrieve:
+  - small vs medium vs large/gov guidance
+  - AI consumer vs AI builder guidance.
+- A CLI wrapper allows quick manual tests and supports later batch evaluation over synthetic questions.
+
+### Problems / uncertainties
+- The baseline is purely lexical; no embeddings or vector search are used yet.
+- Relevance and ranking are currently driven by text search and the `search_text` field; this may later be tuned (for example, by weighting title/heading vs body).
+
+### Empirical behaviour (manual checks)
+Manual runs showed encouraging behaviour:
+- A small business data-leak query retrieves the small-business AI data-leak and privacy chunk at rank 1.
+- An internet-facing services patching query with `size_tag=medium_business` retrieves the medium-sized business AI-attack guidance chunks that focus on patching and patch automation.
+- A training data integrity and provenance query with `role_tag=ai_builder` retrieves AI data security chunks about data poisoning, provenance, and secure storage, plus a secure AI development chunk.
+- An agentic AI security controls query with `size_tag=large_enterprise_gov_critical` and `role_tag=ai_builder` retrieves “Best practices for securing agentic AI systems” and related agentic AI control chunks (designing, deploying, input management, resilience, defence in depth, controlled context, rogue agents).
+
+### Next step
+Use this retrieval helper to:
+- drive synthetic retrieval evaluation over the ground-truth question set (with configurable top‑k, e.g. 5 for answers and 10 for metrics), and
+- begin wiring retrieval into the answer-generation flow via the existing LLM client helper.
