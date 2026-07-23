@@ -5,6 +5,7 @@ from pathlib import Path
 
 from db import get_db_connection
 
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CHUNKS_PATH = PROJECT_ROOT / "data" / "chunks" / "chunks.jsonl"
 
@@ -24,7 +25,8 @@ INSERT INTO chunks (
     chunk_chars,
     chunk_words,
     chunk_lines,
-    search_text
+    search_text,
+    fts
 )
 VALUES (
     %(chunk_id)s,
@@ -40,7 +42,11 @@ VALUES (
     %(chunk_chars)s,
     %(chunk_words)s,
     %(chunk_lines)s,
-    %(search_text)s
+    %(search_text)s,
+    setweight(to_tsvector('english', coalesce(%(document_title)s, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(%(heading_path_text)s, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(%(audience_text)s, '')), 'C') ||
+    setweight(to_tsvector('english', coalesce(%(chunk_text)s, '')), 'D')
 )
 ON CONFLICT (chunk_id) DO UPDATE SET
     source_id = EXCLUDED.source_id,
@@ -55,7 +61,8 @@ ON CONFLICT (chunk_id) DO UPDATE SET
     chunk_chars = EXCLUDED.chunk_chars,
     chunk_words = EXCLUDED.chunk_words,
     chunk_lines = EXCLUDED.chunk_lines,
-    search_text = EXCLUDED.search_text;
+    search_text = EXCLUDED.search_text,
+    fts = EXCLUDED.fts;
 """
 
 
@@ -88,6 +95,18 @@ def normalise_role_tags(value) -> list[str]:
     return [text] if text else []
 
 
+def dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for item in items:
+        item = item.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        output.append(item)
+    return output
+
+
 def build_search_text(record: dict) -> str:
     title = (record.get("document_title") or "").strip()
     heading_path = normalise_heading_path(record.get("heading_path"))
@@ -105,6 +124,68 @@ def build_search_text(record: dict) -> str:
     return "\n\n".join(part for part in parts if part).strip()
 
 
+def build_size_phrases(size_tag: str | None) -> list[str]:
+    if size_tag == "small_business":
+        return [
+            "small business",
+            "small organisation",
+            "small company",
+            "business",
+            "organisation",
+        ]
+    if size_tag == "medium_business":
+        return [
+            "medium business",
+            "medium-sized business",
+            "mid-sized organisation",
+            "business",
+            "organisation",
+        ]
+    if size_tag == "large_enterprise_gov_critical":
+        return [
+            "large enterprise",
+            "large organisation",
+            "government organisation",
+            "critical infrastructure",
+            "enterprise",
+            "organisation",
+        ]
+    if size_tag == "all_sizes":
+        return [
+            "small business",
+            "medium business",
+            "large enterprise",
+            "large organisation",
+            "government organisation",
+            "critical infrastructure",
+            "business",
+            "organisation",
+            "all sizes",
+        ]
+    return []
+
+
+def build_role_phrases(role_tags: list[str]) -> list[str]:
+    phrases: list[str] = []
+
+    for tag in role_tags:
+        if tag == "ai_consumer":
+            phrases.extend([
+                "ai consumer",
+                "end user",
+                "business user",
+            ])
+        elif tag == "ai_builder":
+            phrases.extend([
+                "ai builder",
+                "ai developer",
+                "system provider",
+                "service provider",
+            ])
+
+    return phrases
+
+
 def prepare_row(record: dict) -> dict:
     heading_path = normalise_heading_path(record.get("heading_path"))
     role_tags = normalise_role_tags(record.get("role_audience_tags"))
@@ -117,6 +198,13 @@ def prepare_row(record: dict) -> dict:
     if not chunk_text:
         raise ValueError(f"Missing chunk_text for chunk_id={chunk_id}")
 
+    size_tag = (record.get("size_audience_tag") or "").strip() or None
+    heading_path_text = " ".join(heading_path).strip()
+
+    size_phrases = build_size_phrases(size_tag)
+    role_phrases = build_role_phrases(role_tags)
+    audience_text = " ".join(dedupe_preserve_order(size_phrases + role_phrases))
+
     return {
         "chunk_id": chunk_id,
         "source_id": record.get("source_id"),
@@ -125,13 +213,15 @@ def prepare_row(record: dict) -> dict:
         "chunking_version": record.get("chunking_version"),
         "document_title": record.get("document_title"),
         "heading_path": json.dumps(heading_path, ensure_ascii=False),
-        "size_audience_tag": record.get("size_audience_tag"),
+        "size_audience_tag": size_tag,
         "role_audience_tags": json.dumps(role_tags, ensure_ascii=False),
         "chunk_text": chunk_text,
         "chunk_chars": record.get("chunk_chars"),
         "chunk_words": record.get("chunk_words"),
         "chunk_lines": record.get("chunk_lines"),
         "search_text": build_search_text(record),
+        "heading_path_text": heading_path_text,
+        "audience_text": audience_text,
     }
 
 

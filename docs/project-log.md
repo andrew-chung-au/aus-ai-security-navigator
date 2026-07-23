@@ -445,3 +445,96 @@ Manual runs showed encouraging behaviour:
 Use this retrieval helper to:
 - drive synthetic retrieval evaluation over the ground-truth question set (with configurable top‑k, e.g. 5 for answers and 10 for metrics), and
 - begin wiring retrieval into the answer-generation flow via the existing LLM client helper.
+
+## 2026-07-24 — Retrieval evaluation and text-search refactor (v1.5)
+
+### Goal
+Diagnose why initial retrieval evaluation over the synthetic question set scored zero hits and improve the baseline text retrieval behaviour.
+
+### What was done
+- Ran the first retrieval evaluation over `data/ground_truth_synthetic.jsonl` using the existing text retriever and found:
+  - Hit@5 and MRR were both 0.0 across 27 questions.
+- Added a debug mode to the evaluation script (`src/evaluate_retrieval.py`) that:
+  - inspects top‑100 retrieval results per question,
+  - prints `chunk_id`, `source_id`, leaf heading, and score for manual review.
+- Discovered that for almost all questions, the retriever returned no rows at all, indicating the issue was in the text-search query shape rather than the corpus or evaluation logic.
+- Refactored `src/retrieve_text.py` to:
+  - compute a relevance score with `ts_rank(...)` for all chunks,
+  - drop the hard boolean filter over the text-search expression,
+  - keep only rows with `score > 0`,
+  - preserve optional audience filters on `size_audience_tag` and `role_audience_tags`.
+- Re-ran retrieval evaluation and observed:
+  - non‑zero strict metrics (Hit@5 ≈ 0.07, MRR > 0),
+  - improved relaxed metrics (Hit@10 ≈ 0.15, relaxed MRR > 0),
+  - debug output now shows plausible security‑focused chunks in the top results, even when the exact gold chunk is not yet ranked first.
+- Confirmed that the existing `fts` schema and chunk corpus were sound and that the main fix was relaxing the query so long, natural‑language questions can still return useful candidates.
+
+### Why
+- The earlier hard text-search condition made long, conversational questions too strict, leading to no matches even when relevant guidance existed.
+- Ranking with `ts_rank` over the full corpus and filtering on positive scores produces a more realistic lexical baseline for evaluation, especially for non‑FAQ style guidance.
+- Keeping the evaluation script and corpus unchanged while fixing the retrieval layer preserves reproducibility and makes later comparisons (e.g. vector vs text, hybrid approaches) more meaningful.
+
+### Problems / uncertainties
+- The lexical baseline still misses some gold chunks or ranks them lower than ideal.
+- Current scores are modest and will likely be improved by:
+  - tuning field weighting (title/heading vs body),
+  - adding vector retrieval,
+  - or hybrid text+vector search.
+- Audience filters remain available but are not used in the free‑text evaluation scenario; future UX decisions may introduce guided modes that leverage size/role filtering explicitly.
+
+### Next step
+- Keep this refactored text retriever as the v1.5 lexical baseline for documentation.
+- Add a parallel vector‑based retriever and run the same evaluation harness over both approaches.
+- Compare which questions text vs vector retrieval succeed on and consider a hybrid strategy for the final project demo.
+
+## 2026-07-24 — Vector index and comparative retrieval evaluation (v2)
+
+### Goal
+Extend the retrieval index with dense vector search and compare text vs vector retrieval performance on the synthetic question set.
+
+### What was done
+- Implemented `src/db_build_embeddings.py` to add a pgvector-backed dense index:
+  - loaded a local sentence-transformers model (MiniLM) once at startup
+  - encoded each chunk’s `chunk_text` (and supporting fields as configured) into a normalised embedding
+  - wrote embeddings into a new `chunk_embedding` column in the `chunks` table using the pgvector type
+  - logged progress in batches (32-chunk increments) so it is clear that all 350 chunks were embedded successfully.
+- Implemented `src/retrieve_vector.py` as a parallel retrieval helper:
+  - used `chunk_embedding <=> query_embedding` for exact nearest-neighbour search with cosine distance
+  - ordered results by ascending cosine distance (nearest first), then by `chunk_words` for a slight tie-breaker
+  - preserved audience filters (`size_audience_tag` with `all_sizes` fallback, `role_audience_tags` JSONB containment) to keep behaviour aligned with the text retriever.
+- Updated `src/evaluate_retrieval.py` to compare both retrieval approaches on the same synthetic questions:
+  - called the text retriever (`src/retrieve_text.py`) and the vector retriever (`src/retrieve_vector.py`) for each question
+  - computed strict and relaxed metrics separately for each:
+    - strict Hit@k and MRR based on exact `chunk_id` matches
+    - relaxed Hit@k and MRR where exact matches score highest and same-`source_id`/same-leaf-heading matches count as partial hits
+  - printed a JSON summary with two metric blocks, one for text and one for vector retrieval.
+
+### Why
+- The lexical baseline is a useful reference, but vector search over MiniLM embeddings is better suited to natural-language, security-oriented questions and passages.
+- Evaluating both approaches on the same synthetic question set makes the choice of retriever evidence-based rather than intuitive.
+- Storing embeddings in PostgreSQL via pgvector keeps the index reproducible with standard tooling and avoids introducing an external vector store.
+
+### Observed retrieval behaviour
+On the current synthetic ground-truth set:
+
+- The text baseline now returns non-empty results and achieves modest strict/relaxed metrics after the v1.5 refactor.
+- The vector retriever consistently finds the correct gold chunk in the top positions for most questions and achieves substantially higher Hit@k and MRR.
+- For example, questions about:
+  - “how should a small business use AI safely”
+  - “how to reduce AI data leakage”
+  - “training data integrity and provenance” (with `role_tag=ai_builder`)
+  are answered by vector retrieval with ACSC passages that directly describe small-business AI risks and mitigations, AI-related data leaks and privacy controls, and AI data security / provenance guidance.
+
+These patterns confirm that, on this corpus and benchmark, dense retrieval is a stronger default than pure text search.
+
+### Problems / uncertainties
+- The current synthetic evaluation set is still relatively small (27 questions), so the observed metrics, while encouraging, do not replace broader qualitative testing.
+- Vector retrieval depends on the chosen embedding model; future iterations could explore alternative models or multi-vector strategies if some question types remain weak.
+- Text and vector retrieval succeed on slightly different edge cases; a hybrid or reranked approach may eventually outperform either alone.
+
+### Next step
+- Treat the vector retriever as the preferred baseline for the current project stage while keeping the text retriever as a comparative reference.
+- Use the dual-metric evaluation output to:
+  - identify questions where text succeeds and vector fails (and vice versa)
+  - inform decisions about hybrid retrieval or reranking for the final demo.
+- Begin wiring vector-based retrieval into the planned answer-generation workflow over retrieved chunks, using the existing LLM client helper.

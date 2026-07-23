@@ -1,8 +1,10 @@
 # Dataset notes
 
+This document is a **living snapshot** of the project’s dataset and how it is currently structured, chunked, and used for retrieval and evaluation. It is not a changelog: whenever the corpus, schema, or retrieval approach changes, this file should be updated in place so that it always describes the latest state a new practitioner will see from a fresh clone.
+
 ## Core sources
 
-### HTML pages in first build
+### Core HTML guidance pages
 - An introduction to artificial intelligence  
 - Engaging with artificial intelligence  
 - AI data security  
@@ -11,7 +13,7 @@
 - Careful adoption of agentic AI services  
 - Artificial intelligence for small business: Managing cyber security risks  
 
-### Attached PDFs in first build
+### Core attached PDFs
 - Defending against AI-enabled cyber attacks – Guidance for small businesses  
 - Defending against AI-enabled cyber attacks – Guidance for medium-sized businesses  
 - Defending against AI-enabled cyber attacks – Guidance for government, critical infrastructure and large enterprises  
@@ -21,12 +23,11 @@ These core sources are defined in `data/source_manifest_core.csv`. The manifest 
 - `size_audience_tag` (for example `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)  
 - `role_audience_tags` (for example `ai_consumer`, `ai_builder`, or both)  
 
-These fields are propagated into the retrieval corpus so each chunk carries both organisation size and role context. This same audience information also underpins seed selection, question generation, and retrieval evaluation.
-
+These fields are propagated into the retrieval corpus so each chunk carries both organisation size and role context. The same audience information underpins seed selection, synthetic question generation, and retrieval evaluation.
 
 ## Boundary sources
 
-Retained for possible later expansion, but excluded from the first index build:
+The following sources are retained for possible later expansion, but excluded from the current index build:
 
 - Opportunities for AI in cyber defence  
 - Deploying AI systems securely  
@@ -34,19 +35,18 @@ Retained for possible later expansion, but excluded from the first index build:
 - AI primer  
 - AI in OT principles  
 
-Operational technology (OT) guidance is excluded from the first build because it broadens the project into critical infrastructure and OT environments beyond the initial scope. Keeping OT and broader cyber guidance out of v1 helps maintain a focused AI security navigator for organisational and AI-system audiences.
-
+Operational technology (OT) guidance is excluded because it broadens the project into OT and critical infrastructure environments beyond the initial scope. Keeping OT and broader cyber guidance out of v1 helps maintain a focused AI security navigator for organisational and AI-system audiences.
 
 ## Formats and extraction
 
 - Core sources are ingested as HTML pages and attached PDFs.  
-- All first-build sources are converted into local Markdown files after extraction.  
+- All sources are converted into local Markdown files after extraction.  
 - The source manifest records `content_type` (`html` or `pdf`) so the workflow can route each source to the appropriate downloader and extractor.  
-- The mixed HTML/PDF corpus improves coverage for audience-specific and topic-specific questions, but it also requires format-specific extraction and cleanup.
+- The mixed HTML/PDF corpus improves coverage for audience-specific and topic-specific questions, but requires format-specific extraction and cleanup.
 
 ### Manual review
 
-Extraction is followed by a one-time manual review and correction step for the first corpus. This review is limited to extraction corrections rather than rewriting.
+Extraction is followed by a one-time manual review and correction step. This review is limited to fixing extraction artefacts rather than rewriting guidance.
 
 Typical corrections include:
 
@@ -60,7 +60,6 @@ Typical corrections include:
 
 The reviewed Markdown files form the cleaned corpus used for chunking, database loading, retrieval, and evaluation. This is a one-time quality pass for the small curated corpus rather than an ongoing editorial process.
 
-
 ## Audience-aware corpus
 
 The project treats ACSC AI guidance as an audience-aware corpus:
@@ -71,16 +70,15 @@ The project treats ACSC AI guidance as an audience-aware corpus:
 
 The `size_audience_tag` and `role_audience_tags` fields in `data/source_manifest_core.csv` capture this segmentation at the document level and are copied into each chunk in the retrieval corpus. This supports:
 
-- audience-aware retrieval and filtering,  
-- evaluation of audience- and role-specific queries, and  
-- source-grounded answers that better match organisation type and responsibility.
+- audience-aware retrieval and filtering  
+- evaluation of audience- and role-specific queries  
+- source-grounded answers that better match organisation type and responsibility  
 
 These audience fields are also used when designing seeds and synthetic questions, so evaluation can explicitly slice by organisation size and AI responsibility.
 
-
 ## Retrieval-ready corpus
 
-The first retrieval-ready corpus is written to:
+The retrieval-ready corpus is written to:
 
 - `data/chunks/chunks.jsonl`
 
@@ -88,7 +86,7 @@ Each line in `data/chunks/chunks.jsonl` represents one chunk as a JSON object. T
 
 ### Minimum chunk schema
 
-The minimum chunk schema for the first build is:
+The minimum chunk schema is:
 
 - `chunk_id` – a stable identifier for the chunk (for example `source_id::index`)  
 - `source_id` – the logical source identifier, aligned with the manifest  
@@ -99,12 +97,11 @@ The minimum chunk schema for the first build is:
 - `heading_path` – the heading hierarchy for the chunk, stored as an ordered path from section to subsection  
 - `size_audience_tag` – the organisation size label copied from `data/source_manifest_core.csv`  
 - `role_audience_tags` – the list of role labels (`ai_consumer`, `ai_builder`, or both) copied from `data/source_manifest_core.csv`  
-- `chunk_text` – the text content used for retrieval, evaluation, and later embeddings  
+- `chunk_text` – the text content used for retrieval, evaluation, and embeddings  
 
-This schema is intentionally minimal. It preserves provenance, section context, and audience metadata without adding unnecessary complexity in the first build.
+This schema is intentionally minimal. It preserves provenance, section context, and audience metadata without adding unnecessary complexity.
 
 During development, the chunking script also emits diagnostic metrics such as `chunk_chars`, `chunk_words`, and `chunk_lines` to help inspect chunk sizes and identify unusually long or short chunks. These diagnostics are useful for QA and database inspection but are treated as non-core retrieval fields.
-
 
 ## Chunking approach
 
@@ -112,9 +109,9 @@ The cleaned Markdown corpus is chunked using a heading-aware approach rather tha
 
 This approach is intended to:
 
-- preserve document structure and semantic boundaries,  
-- keep related material together, and  
-- reduce the risk of splitting lists, tables, or paired risk / mitigation content in unhelpful ways.
+- preserve document structure and semantic boundaries  
+- keep related material together  
+- reduce the risk of splitting lists, tables, or paired risk / mitigation content in unhelpful ways  
 
 ### General rules
 
@@ -130,11 +127,11 @@ Some sections contain long top-level numbered recommendations or best-practice l
 
 In these cases:
 
-- any introductory text before the list may remain as its own chunk,  
-- each numbered item becomes its own chunk, and  
-- the numbered item title is appended to `heading_path` to preserve the semantic focus.
+- any introductory text before the list may remain as its own chunk  
+- each numbered item becomes its own chunk  
+- the numbered item title is appended to `heading_path` to preserve the semantic focus  
 
-This is used to preserve the granularity of enumerated guidance without falling back to arbitrary fixed-size windows. It also supports later seed–chunk matching when seeds reference specific numbered items.
+This preserves the granularity of enumerated guidance without falling back to arbitrary fixed-size windows and supports seed–chunk matching when seeds reference specific numbered items.
 
 ### Lists
 
@@ -146,7 +143,7 @@ This is used to preserve the granularity of enumerated guidance without falling 
 
 Some documents use repeated patterns where a risk heading is followed by a mitigation or `Managing risks` subsection. These are treated as a single logical unit where possible so that the problem and the recommended response remain together.
 
-Examples in the first build include:
+Examples include:
 
 - `ai-small-business.md` – risk sections paired with `Managing risks`  
 - `ai-data-security.md` – risk headings paired with mitigation content  
@@ -161,22 +158,21 @@ Tables are treated as special chunks because naive splitting can damage structur
 
 For tables:
 
-- small or medium tables usually remain as a single chunk under the surrounding heading context,  
-- larger tables are only split when necessary and where row or section boundaries provide natural chunk divisions,  
-- when a table is split, row-wise text preserves the relevant heading context and, where needed, column meaning.
+- small or medium tables usually remain as a single chunk under the surrounding heading context  
+- larger tables are only split when necessary and where row or section boundaries provide natural chunk divisions  
+- when a table is split, row-wise text preserves the relevant heading context and, where needed, column meaning  
 
 Manual cleanup may reposition or relabel a table within a section when this better reflects the original structure and improves chunking, provided the meaning is unchanged.
 
-Examples in the first build include:
+Examples include:
 
-- the AI system lifecycle table in `ai-data-security.md`,  
-- the glossary-style table in `ai-small-business.md`, and  
-- any condensed risk/mitigation tables in the PDF guides.
-
+- the AI system lifecycle table in `ai-data-security.md`  
+- the glossary-style table in `ai-small-business.md`  
+- condensed risk/mitigation tables in the PDF guides  
 
 ## Document-specific patterns
 
-Some source documents have recurring structures that the chunking process should preserve.
+Some source documents have recurring structures that the chunking process preserves.
 
 ### AI-enabled cyber attack PDF guides
 
@@ -194,36 +190,34 @@ Risk and security domains contain nested scenario examples and recommended best 
 
 Domain sections contain nested risks, mitigations, and supporting material. These are chunked with their parent domain context preserved so evaluations about supply chain threats and mitigations can be grounded in complete domain blocks.
 
-
 ## Manual chunk QA
 
-For the first build, a small sampled subset of chunks can be exported from `data/chunks/chunks.jsonl` and manually inspected before retrieval indexing.
+A small sampled subset of chunks can be exported from `data/chunks/chunks.jsonl` and manually inspected before retrieval indexing.
 
 This spot-check is intended to verify that:
 
-- `heading_path` reflects the cleaned Markdown structure,  
-- `size_audience_tag` and `role_audience_tags` have been propagated correctly from the manifest,  
-- lists and tables were not broken badly in the chunking process, and  
-- paired or closely related sections remain coherent when intended.
+- `heading_path` reflects the cleaned Markdown structure  
+- `size_audience_tag` and `role_audience_tags` have been propagated correctly from the manifest  
+- lists and tables were not broken badly in the chunking process  
+- paired or closely related sections remain coherent when intended  
 
 Representative spot-checks include one or two chunks from major source types, such as:
 
-- the small-business PDF,  
-- the medium-business PDF,  
-- the government / critical infrastructure / large enterprise PDF, and  
-- selected HTML guidance pages.
+- the small-business PDF  
+- the medium-business PDF  
+- the government / critical infrastructure / large enterprise PDF  
+- selected HTML guidance pages  
 
 Where used, this produces inspection files such as:
 
 - `data/chunks/spotcheck.jsonl`  
 - `data/chunks/spotcheck.json`  
 
-This QA step is lightweight and manual, but it helps confirm corpus quality before embeddings, retrieval indexing, and evaluation are added.
-
+This QA step is lightweight and manual, but it helps confirm corpus quality before embeddings, retrieval indexing, and evaluation are applied.
 
 ## Evaluation seed and question generation
 
-The dataset now includes an early evaluation-data pipeline built around a curated seed manifest, deterministic seed–chunk matching, LLM seed vetting, and synthetic question generation.
+The dataset includes an evaluation-data pipeline built around a curated seed manifest, deterministic seed–chunk matching, LLM seed vetting, and synthetic question generation.
 
 ### Seed manifest
 
@@ -238,7 +232,7 @@ A curated seed manifest (`data/ground_truth_seed_draft.json`) defines the passag
 - optional `numbered_item_title_guess`  
 - optional `anchor_quote`  
 
-This file is intentionally treated as a draft configuration rather than final ground truth. It captures “what to test” before synthetic questions are generated and before retrieval metrics are computed.
+This file captures “what to test” before synthetic questions are generated and before retrieval metrics are computed.
 
 ### Seed matching and vetting
 
@@ -248,7 +242,7 @@ The matching process gives strong precedence to numbered list items when `number
 
 Matched chunks are then passed through an LLM-based vetting step. The judge decides whether each chunk should be included for evaluation, assigns a seed quality label (`high`, `medium`, `low`), and may refine the passage type based on the actual chunk content.
 
-This vetting stage filters out weak, overly narrow, or off-target passages before question generation begins and produces a vetted seed file such as `data/ground_truth_seeds_vetted.jsonl`.
+This vetting stage filters out weak, overly narrow, or off-target passages before question generation and produces a vetted seed file such as `data/ground_truth_seeds_vetted.jsonl`.
 
 ### Synthetic question generation
 
@@ -256,38 +250,49 @@ Vetted seed chunks are used to generate realistic synthetic evaluation questions
 
 Generated questions are written to `data/ground_truth_synthetic.jsonl`. Each record preserves the source chunk and audience context so later retrieval and answer evaluation can be sliced by:
 
-- `chunk_id`,  
-- `size_audience_tag`,  
-- `role_audience_tags`,  
-- `target_size`,  
-- `target_role`.
+- `chunk_id`  
+- `size_audience_tag`  
+- `role_audience_tags`  
+- `target_size`  
+- `target_role`  
 
 Batch generation includes retry handling and a fixed delay between successful requests to stay within rate limits for the chosen model provider.
 
+## Retrieval and evaluation (current setup)
 
-## Current first-build status
+The dataset is exercised via a PostgreSQL-backed retrieval layer over the `chunks` table and an evaluation harness that computes metrics on the synthetic question set.
 
-For the first build:
+### Text retrieval helper
 
-- The dataset is manifest-defined in `data/source_manifest_core.csv`.  
-- Source files are downloaded into raw HTML and PDF folders based on `content_type`.  
-- Extracted content is manually reviewed into cleaned Markdown.  
-- The cleaned Markdown corpus is chunked into `data/chunks/chunks.jsonl` with audience metadata and heading paths.  
-- Diagnostic fields such as chunk word count, character count, and line count help inspect chunk sizes.  
-- A small sampled subset of chunks can be exported and manually inspected before retrieval indexing.  
-- A curated seed manifest has been matched to chunks and vetted for evaluation use.  
-- Synthetic ground-truth questions have been generated and saved to `data/ground_truth_synthetic.jsonl`.  
-- Batch generation is paced and retried to stay within request limits while producing reusable evaluation data.
+The baseline text retrieval helper (`src/retrieve_text.py`):
 
+- uses PostgreSQL full-text search to compute a relevance score for chunks via  
+  - `ts_rank(fts, websearch_to_tsquery('english', query), 1)`
+- filters results on `score > 0` rather than requiring a strict boolean match on  
+  - `fts @@ websearch_to_tsquery('english', query)`
+- preserves optional audience filters on:  
+  - `size_audience_tag` (with `all_sizes` as a fallback), and  
+  - `role_audience_tags` (JSONB array containment)
+- returns the top‑k chunks (default `k=5`, configurable) ordered by score, with a secondary sort on `chunk_words` for tie‑breaking  
 
-## Summary
+This refactor was motivated by the observation that long, conversational questions rarely satisfied a strict boolean full-text condition, leading to empty result sets even when relevant guidance existed. Ranking first and filtering on positive scores produces a more practical lexical baseline for the current corpus.
 
-- The first index build uses a curated ACSC AI guidance corpus consisting of core HTML pages and three audience-specific PDF guides.  
-- Boundary sources are retained for possible later expansion but excluded from the first build to keep scope focused.  
-- Sources are extracted and cleaned into Markdown, with a documented manual correction step for structural issues.  
-- Audience metadata is defined deterministically in the manifest via `size_audience_tag` and `role_audience_tags` and propagated into the chunked corpus.  
-- The first retrieval-ready corpus is stored as `data/chunks/chunks.jsonl` with a minimal but provenance-rich schema.  
-- Chunking is structure-aware and preserves headings, lists, tables, and risk / mitigation relationships where practical.  
-- Long enumerated guidance sections may be split into item-level chunks when that improves retrieval focus and seed–chunk matching.  
-- A small manual spot-check step can be used to inspect sampled chunks before retrieval indexing.  
-- The project now includes a seed-to-question evaluation pipeline for deterministic matching, LLM vetting, and synthetic ground-truth question generation, all grounded in the same chunked corpus and audience model.  
+### Evaluation harness
+
+Using the synthetic ground-truth questions in `data/ground_truth_synthetic.jsonl` and the chunk corpus:
+
+- strict metrics (exact `chunk_id` match within top‑k) report non‑zero Hit@k and MRR values, indicating that some gold chunks appear early in the ranked list  
+- relaxed metrics (exact or same-heading match within a larger top‑k) report higher hit rates and MRR, reflecting cases where retrieval reaches the correct document and section even when the exact gold chunk is not ranked first  
+
+A debug mode in `src/evaluate_retrieval.py` prints top‑k results per question (including `chunk_id`, `source_id`, leaf heading, and score), confirming that:
+
+- the chunked dataset and audience metadata are being used correctly in retrieval  
+- the primary remaining gaps are in lexical ranking rather than in corpus structure or schema  
+
+These retrieval and evaluation behaviours do not alter the dataset itself:
+
+- core and boundary sources and audience metadata in `data/source_manifest_core.csv` remain unchanged  
+- the retrieval-ready corpus in `data/chunks/chunks.jsonl` retains the same minimal schema and structure-aware chunking  
+- the seed manifest, vetted seeds, and synthetic question dataset continue to rely on `chunk_id`, `heading_path`, `size_audience_tag`, and `role_audience_tags`  
+
+This document therefore continues to describe the dataset and its structure; retrieval and evaluation changes are reflected here only insofar as they explain how the existing corpus is currently searched and assessed.

@@ -27,10 +27,13 @@ CREATE TABLE IF NOT EXISTS chunks (
     chunk_words INTEGER,
     chunk_lines INTEGER,
     search_text TEXT NOT NULL,
-    fts tsvector GENERATED ALWAYS AS (
-        to_tsvector('english', coalesce(search_text, ''))
-    ) STORED
+    fts tsvector NOT NULL
 );
+"""
+
+ADD_EMBEDDING_COLUMN_SQL = """
+ALTER TABLE chunks
+ADD COLUMN IF NOT EXISTS chunk_embedding vector(384);
 """
 
 CREATE_INDEXES_SQL = """
@@ -40,25 +43,23 @@ CREATE INDEX IF NOT EXISTS chunks_size_audience_idx ON chunks (size_audience_tag
 CREATE INDEX IF NOT EXISTS chunks_role_tags_idx ON chunks USING GIN (role_audience_tags);
 """
 
-
 def init_db(drop: bool = False) -> None:
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # vector extension (safe if it already exists)
             cur.execute(CREATE_EXTENSION_SQL)
 
             if drop:
                 cur.execute(DROP_SQL)
 
             cur.execute(CREATE_TABLE_SQL)
+            cur.execute(ADD_EMBEDDING_COLUMN_SQL)
             cur.execute(CREATE_INDEXES_SQL)
 
         conn.commit()
     finally:
         conn.close()
 
-
 if __name__ == "__main__":
-    init_db(drop=False)
+    init_db(drop=True)
     print("Database initialized.")

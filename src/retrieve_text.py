@@ -32,7 +32,7 @@ def retrieve_chunks(
         return []
 
     where_clauses = [
-        "fts @@ websearch_to_tsquery('english', %(query)s)"
+        "score > 0"
     ]
     params: dict[str, Any] = {
         "query": query,
@@ -50,6 +50,28 @@ def retrieve_chunks(
         params["role_tag_json"] = json.dumps([role_tag])
 
     sql = f"""
+    WITH ranked AS (
+        SELECT
+            chunk_id,
+            source_id,
+            source_file,
+            chunk_index,
+            chunking_version,
+            document_title,
+            heading_path,
+            size_audience_tag,
+            role_audience_tags,
+            chunk_text,
+            chunk_chars,
+            chunk_words,
+            chunk_lines,
+            ts_rank(
+                fts,
+                websearch_to_tsquery('english', %(query)s),
+                1
+            ) AS score
+        FROM chunks
+    )
     SELECT
         chunk_id,
         source_id,
@@ -64,8 +86,8 @@ def retrieve_chunks(
         chunk_chars,
         chunk_words,
         chunk_lines,
-        ts_rank(fts, websearch_to_tsquery('english', %(query)s), 1) AS score
-    FROM chunks
+        score
+    FROM ranked
     WHERE {" AND ".join(where_clauses)}
     ORDER BY score DESC, chunk_words ASC NULLS LAST
     LIMIT %(limit)s;
@@ -102,7 +124,10 @@ def print_results(results: list[dict[str, Any]]) -> None:
             except json.JSONDecodeError:
                 role_tags = [role_tags]
 
-        print(f"[{i}] {row['chunk_id']}  score={row['score']:.4f}")
+        score = row.get("score")
+        score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "n/a"
+
+        print(f"[{i}] {row['chunk_id']}  score={score_str}")
         print(f"    source_file: {row.get('source_file')}")
         print(f"    title: {row.get('document_title')}")
         print(f"    heading_path: {' > '.join(heading_path)}")

@@ -47,7 +47,7 @@ Each row describes a single ACSC source with fields such as:
   - `size_audience_tag` (e.g. `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)
   - `role_audience_tags` (e.g. `ai_consumer`, `ai_builder`, or both; stored as a delimited list and normalised downstream)
 
-The manifest is the single source of truth for which ACSC documents are in scope for the first build and how they are tagged.
+The manifest is the single source of truth for which ACSC documents are in scope and how they are tagged.
 
 ### Source documents
 
@@ -210,33 +210,105 @@ Batch generation is paced (e.g. fixed delay between requests) and uses retry han
 
 10. **Initialise the database schema**
 
-   ```bash
-   uv run python src/db_init.py
-   ```
+    ```bash
+    uv run python src/db_init.py
+    ```
 
-   - Creates the `chunks` table with the current schema.
-   - Adds indexes on full-text search and audience metadata.
+    - Creates the `chunks` table with the current schema.
+    - Adds indexes on full-text search and audience metadata.
 
 11. **Load chunks into PostgreSQL**
 
-   ```bash
-   uv run python src/db_load_chunks.py
-   ```
+    ```bash
+    uv run python src/db_load_chunks.py
+    ```
 
-   - Reads `data/chunks/chunks.jsonl`.
-   - Normalises `heading_path` and `role_audience_tags` into JSON arrays.
-   - Builds `search_text` from titles, headings, audience tags, and `chunk_text`.
-   - Upserts rows into the `chunks` table keyed by `chunk_id`.
+    - Reads `data/chunks/chunks.jsonl`.
+    - Normalises `heading_path` and `role_audience_tags` into JSON arrays.
+    - Builds `search_text` from titles, headings, audience tags, and `chunk_text`.
+    - Upserts rows into the `chunks` table keyed by `chunk_id`.
 
-12. **Run baseline retrieval**
+12. **Run text retrieval**
 
-   ```bash
-   uv run python src/retrieve_text.py "your query"
-   ```
+    ```bash
+    uv run python src/retrieve_text.py "your query"
+    ```
 
-   - Uses PostgreSQL full-text search and ranking.
-   - Supports optional `--size-tag` and `--role-tag` filters.
-   - Returns top‑k chunks (default `k=5`, configurable) for inspection and evaluation.
+    - Uses PostgreSQL full-text search and ranking.
+    - Supports optional `--size-tag` and `--role-tag` filters.
+    - Returns top‑k chunks (default `k=5`, configurable) for inspection and evaluation.
+
+### 3.8 Retrieval evaluation (text retriever)
+
+After the PostgreSQL `chunks` table is populated and the text retriever is in place, a fresh checkout can reproduce retrieval evaluation over the synthetic question set.
+
+13. **Run retrieval evaluation over synthetic questions**
+
+    ```bash
+    uv run python src/evaluate_retrieval.py
+    ```
+
+    - Reads `data/ground_truth_synthetic.jsonl`.
+    - Uses `src/retrieve_text.py` as one retrieval backend.
+    - Computes strict and relaxed retrieval metrics such as:
+      - strict Hit@k and MRR based on exact `chunk_id` matches,
+      - relaxed Hit@k and MRR where:
+        - exact `chunk_id` matches score highest,
+        - chunks from the same `source_id` and final heading (leaf of `heading_path`) count as partial hits.
+    - Prints metrics and, in debug mode, a top‑k listing per question showing:
+      - `chunk_id`, `source_id`,
+      - leaf heading,
+      - text-search score.
+
+#### Baseline text retrieval behaviour
+
+The current text retriever (`src/retrieve_text.py`) is implemented to:
+
+- compute a relevance score for chunks using:
+  - `ts_rank(fts, websearch_to_tsquery('english', query), 1)`
+- filter results on `score > 0` instead of requiring a strict boolean match on:
+  - `fts @@ websearch_to_tsquery('english', query)`
+- preserve optional audience filters:
+  - `size_audience_tag` (with `all_sizes` as a fallback), and
+  - `role_audience_tags` (JSONB array containment)
+- return the top‑k ranked chunks (default `k=5`, configurable) ordered by score and chunk length.
+
+This change makes retrieval more robust for long, conversational questions while keeping the corpus, manifest, and chunk schema unchanged.
+
+### 3.9 Vector index and comparative retrieval evaluation
+
+In addition to the text-based retrieval baseline, the project includes a pgvector-backed dense retrieval index and a comparative evaluation harness that reports metrics for both text and vector retrieval on the same synthetic question set.
+
+14. **Build pgvector embeddings for all chunks**
+
+    ```bash
+    uv run python src/db_build_embeddings.py
+    ```
+
+    - Loads a local sentence-transformers model (MiniLM) once.
+    - Reads all rows from the `chunks` table.
+    - Computes a normalised embedding for each chunk’s `chunk_text` (plus supporting fields as configured in the script).
+    - Writes the embeddings into a `chunk_embedding` column using pgvector.
+    - Logs progress as chunks are embedded so another person can see that all rows have been processed.
+
+15. **Run comparative retrieval evaluation (text vs vector)**
+
+    ```bash
+    uv run python src/evaluate_retrieval.py
+    ```
+
+    - Reads `data/ground_truth_synthetic.jsonl`.
+    - Uses both retrieval helpers:
+      - `src/retrieve_text.py` (PostgreSQL full-text search),
+      - `src/retrieve_vector.py` (pgvector nearest neighbour search over MiniLM embeddings).
+    - Computes strict and relaxed retrieval metrics separately for each retriever:
+      - strict Hit@k and MRR based on exact `chunk_id` matches,
+      - relaxed Hit@k and MRR where:
+        - exact `chunk_id` matches score highest,
+        - chunks from the same `source_id` and final heading (leaf of `heading_path`) count as partial hits.
+    - Prints a JSON summary with separate metric blocks for text and vector retrieval, so their performance can be compared on the same synthetic question set.
+
+With the vector index in place, another practitioner can run both text and vector retrievers over arbitrary queries (with the same audience filters and corpus) and rerun `src/evaluate_retrieval.py` to obtain metrics for each approach. The underlying dataset, manifest, chunking strategy, and seed/question generation pipeline remain unchanged, so all prior reproducibility guarantees still hold.
 
 ---
 
@@ -260,7 +332,8 @@ By following the steps above, a fresh checkout can reproduce the main data artef
   - `data/ground_truth_synthetic.jsonl`
 - Retrieval index:
   - PostgreSQL `chunks` table populated from `data/chunks/chunks.jsonl`
-  - baseline retrieval behaviour via `src/retrieve_text.py`.
+  - text retrieval behaviour via `src/retrieve_text.py`
+  - vector retrieval behaviour via `src/retrieve_vector.py`
 
 ---
 
@@ -276,6 +349,6 @@ From a clean clone, another practitioner can:
 6. Recreate the seed configuration, seed–chunk matches, and vetted seeds.
 7. Regenerate synthetic ground-truth questions.
 8. Build and populate the PostgreSQL `chunks` table.
-9. Run baseline retrieval over the synthetic question set and manual test queries.
+9. Run text and vector retrieval over the synthetic question set and manual test queries, and rerun the comparative evaluation to obtain metrics for both approaches.
 
-Project design details (problem framing, dataset notes, decisions, and log) are documented separately in `docs/dataset-notes.md`, `docs/decisions.md`, and `docs/project-log.md` so this file can stay focused on “how to reproduce” rather than “why the project is structured this way”.
+Project design details (problem framing, dataset notes, decisions, and log) are documented separately in `docs/dataset-notes.md`, `docs/decisions.md`, and `docs/project-log.md` so this file can stay focused on “how to reproduce” rather than “why the project is structured this way`.
