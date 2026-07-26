@@ -575,3 +575,95 @@ Add a simple hybrid retriever on top of the existing text and vector baselines a
 - Keep vector retrieval as the preferred baseline retriever for the next project phase, with text and hybrid as evaluated reference points.
 - Use the JSONL debug output to inspect a handful of successes and failures per backend and decide whether any small hybrid or ranking tweaks are worth exploring.
 - Begin wiring the vector-based retriever into the first answer-generation layer over retrieved ACSC chunks, while keeping the evaluation harness as the main way to measure retrieval changes.
+
+## 2026-07-25 — Reviewed corpus snapshot and reproducibility modes
+
+### Goal
+Preserve the manually reviewed Markdown corpus as a versioned snapshot and clearly separate strict baseline reproduction from fresh corpus rebuilds.
+
+### What was done
+- Restored the cleaned Markdown corpus in `data/processed/` from the current `HEAD` commit.
+- Created a versioned snapshot of the reviewed corpus at:
+  - `data/corpus_snapshots/v1_2026-07-25/`
+- Copied all reviewed Markdown files from `data/processed/` into the snapshot directory:
+  - `agentic-ai-adoption.md`
+  - `ai-attacks-large.md`
+  - `ai-attacks-medium.md`
+  - `ai-attacks-small.md`
+  - `ai-data-security.md`
+  - `ai-introduction.md`
+  - `ai-ml-supply-chain.md`
+  - `ai-small-business.md`
+  - `engaging-with-ai.md`
+  - `secure-ai-development.md`
+- Copied the matching manifest into the snapshot as:
+  - `data/corpus_snapshots/v1_2026-07-25/manifest.csv`
+- Generated file checksums for verification:
+  - `data/corpus_snapshots/v1_2026-07-25/checksums.sha256`
+- Updated documentation to describe two reproducibility modes:
+  - **Strict v1 baseline reproduction**: restore the snapshot into `data/processed/` and rebuild chunks, index, embeddings, and metrics.
+  - **Fresh corpus rebuild**: re-run download, extraction, and manual cleanup, then create a new snapshot before rebuilding downstream artefacts.
+- Updated `docs/reproducibility.md` to:
+  - document the snapshot directory,
+  - show a non-destructive restore command,
+  - clarify that `data/processed/` is a working directory and snapshots are immutable inputs.
+- Updated the top-level `README.md` to:
+  - mention the snapshot in the project scope and workflow,
+  - link to `docs/reproducibility.md` as the source of truth for both modes.
+
+### Why
+- Manual Markdown cleanup is a semi-manual transformation; without a snapshot, a fresh extraction could overwrite the exact corpus used for current retrieval and evaluation.
+- Preserving the reviewed corpus as a versioned input makes strict reproduction possible even if ACSC sources or extraction behaviour change.
+- Separating “strict v1 baseline” from “fresh rebuild” avoids conflating backwards-compatible reproduction with intentional dataset evolution.
+
+### Problems / uncertainties
+- Future corpus updates will need their own dated snapshots and log entries to remain comparable.
+- Snapshot size is currently manageable in Git; if it grows, Git LFS or release assets may be needed.
+
+### Next step
+Use `data/corpus_snapshots/v1_2026-07-25/` as the canonical cleaned corpus for current retrieval and evaluation baselines, and treat any future corpus changes as new versions with their own snapshots and documentation updates.
+
+## 2026-07-25 — Vector-based answer generation, judge-v3 evaluation, and prompt comparison
+
+### Goal
+Use the vector retriever to generate grounded answers to the synthetic question set and compare answer-generation strategies under a fixed judge.
+
+### What was done
+- Implemented `src/generate_answers.py` to:
+  - read `data/ground_truth_synthetic.jsonl`,
+  - call the vector retriever with `top_k=5` and audience filters (`target_size`, `target_role`),
+  - assemble a structured context of retrieved chunks,
+  - call the structured-output LLM client to produce grounded answers,
+  - write one JSONL record per question to `data/answers/answers_vector_v2_prompt_grounded.jsonl`.
+- Preserved the earlier generator as `src/generate_answers_v1.py` for reproducibility and comparison.
+- Implemented `src/judge_answers.py` as the fixed judge-v3 pipeline to:
+  - load `data/chunks/chunks.jsonl` into memory,
+  - read generated answers,
+  - look up the gold chunk via `gold_chunk_id`,
+  - score each answer with a structured-output schema:
+    - `reasoning`: step-by-step explanation,
+    - `score`: `"good"` or `"bad"`,
+  - apply a rubric that:
+    - focuses on semantic equivalence rather than exact wording,
+    - allows extra detail if it stays consistent with the gold passage,
+    - requires key named resources or frameworks when the question explicitly asks for them,
+    - marks answers as `bad` if they omit central named items or introduce major unsupported claims,
+  - write judged results to the corresponding judged JSONL file.
+- Ran the fixed judge over both answer sets to compare generator quality under the same evaluator.
+- Observed that Vector v2 Prompt Grounded outperformed Vector v1 on the 27-question synthetic set, mainly by retaining named resources, concrete controls, and multi-step guidance.
+
+### Why
+- Vector retrieval was already the strongest retrieval backend.
+- Grounded answer generation is the natural next step toward a full RAG pipeline.
+- A fixed judge makes the comparison between answer-generation strategies fair.
+- The v2 prompt improved completeness and specificity while keeping answers corpus-grounded.
+
+### Problems / uncertainties
+- The evaluation set is still small (27 questions), so the results are directional rather than definitive.
+- Some answers judged as good may draw on more detailed related ACSC guidance rather than the exact gold chunk, which is useful for end users but can complicate strict gold-chunk comparisons.
+- The judge rubric is still heuristic rather than human-calibrated.
+
+### Next step
+- Add a small summarisation script to compute overall and slice-level good rates from the judged outputs.
+- Update the README and reproducibility notes to describe the fixed judge-v3 comparison and the v2 answer-generation selection.
+

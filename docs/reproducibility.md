@@ -1,8 +1,8 @@
 # Reproducibility
 
-This project is designed so that another person can recreate the environment, rebuild the corpus, and rerun the main pipelines from a clean checkout, using a manifest-defined dataset and a small set of scripts plus documented manual steps.
+This project is designed so another person can recreate the Python environment, rebuild the ACSC corpus and PostgreSQL retrieval index, regenerate or reuse evaluation artefacts, and rerun comparative retrieval evaluation from a clean checkout.
 
-The focus of this document is on environment, inputs, scripted transformations, manual checkpoints, and outputs — not on re-explaining the entire project design.
+The workflow combines manifest-defined source ingestion, scripted transformations, documented manual checkpoints, and versioned generated artefacts. This document focuses on environment, inputs, execution steps, manual checkpoints, and outputs rather than re-explaining the project rationale.
 
 ---
 
@@ -12,8 +12,15 @@ The focus of this document is on environment, inputs, scripted transformations, 
 
 - Python 3.13
 - `uv` for environment and dependency management
+- PostgreSQL
+- The PostgreSQL `pgvector` extension
+- A PostgreSQL database user with permission to create or enable the `vector` extension
+- Internet access for:
+  - downloading public ACSC source documents
+  - downloading the configured sentence-transformers embedding model on its first use, if it is not already cached
+  - LLM-assisted seed vetting and synthetic-question generation, when regenerating those artefacts
 
-### Setup
+### Python setup
 
 From the project root:
 
@@ -21,364 +28,808 @@ From the project root:
 uv sync
 ```
 
-This creates the Python environment and installs all dependencies at the pinned versions defined in:
+This creates the Python environment and installs dependencies at the pinned versions defined in:
 
 - `pyproject.toml`
 - `uv.lock`
 
 These files are committed to the repository and should not be edited casually; they are part of the reproducibility contract.
 
+### Database configuration
+
+Create a local `.env` file in the project root:
+
+```bash
+DATABASE_URL=postgresql://<user>:<password>@localhost:<port>/<database>
+```
+
+Do not commit `.env` or database credentials. A `.env.example` file should be committed with the required variable name and a placeholder value.
+
+Before running database scripts:
+
+1. Ensure the target PostgreSQL database exists.
+2. Ensure the connected user can create or enable the `vector` extension.
+3. Confirm that `DATABASE_URL` points to the intended database.
+
+The project database helper in `src/db.py` loads `DATABASE_URL` from `.env` and exposes the shared connection logic used by database scripts.
+
+### Embedding model
+
+The vector retrieval pipeline uses the sentence-transformers model configured in `src/db_build_embeddings.py` and `src/retrieve_vector.py`.
+
+Record the exact identifier used by the code here before treating a run as a strict baseline:
+
+```text
+Embedding model: <exact sentence-transformers model identifier>
+Embedding dimension: <dimension used by the database schema>
+Embedding normalisation: L2-normalised before storage and query-time comparison
+Distance metric: cosine distance through pgvector
+```
+
+For example, `sentence-transformers/all-MiniLM-L6-v2` maps sentences and paragraphs to a 384-dimensional dense vector space. Replace the placeholder above only with the exact model identifier actually configured in this repository.
+
 ---
 
-## 2. Data & manifest
+## 2. Data and manifest
 
 ### Source manifest
 
 The core dataset is defined in:
 
-- `data/source_manifest_core.csv`
+```text
+data/source_manifest_core.csv
+```
 
-Each row describes a single ACSC source with fields such as:
+Each row describes one ACSC source. Fields include:
 
-- identifiers: `source_id`, `title`, `url`
-- metadata: `content_type` (`html` or `pdf`), `published_date`, `primary_use_case`, `topic_tags`
-- scope: `core`, `boundary`, `notes`
-- audience fields:
-  - `size_audience_tag` (e.g. `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)
-  - `role_audience_tags` (e.g. `ai_consumer`, `ai_builder`, or both; stored as a delimited list and normalised downstream)
+- identifiers:
+  - `source_id`
+  - `title`
+  - `url`
+- source metadata:
+  - `content_type` (`html` or `pdf`)
+  - `published_date`
+  - `primary_use_case`
+  - `topic_tags`
+- corpus scope:
+  - `core`
+  - `boundary`
+  - `notes`
+- audience metadata:
+  - `size_audience_tag`
+  - `role_audience_tags`
 
-The manifest is the single source of truth for which ACSC documents are in scope and how they are tagged.
+The current size vocabulary is:
+
+- `small_business`
+- `medium_business`
+- `large_enterprise_gov_critical`
+- `all_sizes`
+
+The current role vocabulary is:
+
+- `ai_consumer`
+- `ai_builder`
+- both roles, stored as a delimited source-manifest value and normalised downstream into an array
+
+The manifest is the single source of truth for in-scope ACSC documents and their document-level metadata.
 
 ### Source documents
 
-- All sources are public ACSC HTML pages and PDF documents.
-- No private or local-only data is required; a fresh clone can reconstruct the dataset by downloading from the URLs in `data/source_manifest_core.csv`.
+- All sources are public ACSC HTML pages or PDF documents.
+- A fresh clone can recreate raw inputs by downloading URLs recorded in `data/source_manifest_core.csv`.
+- Boundary sources may be documented in the manifest but are deliberately excluded from the current retrieval index.
 
-If ACSC updates the documents, a new run will reflect those updates; for strict reproduction, keep an archived copy of `data/raw/` from the original run.
+ACSC may update source pages or PDFs. A new download can therefore differ from the original project run. For strict reproduction of a prior corpus version, retain or archive the original `data/raw/` files, reviewed `data/processed/` Markdown files, and generated `data/chunks/chunks.jsonl`.
 
 ---
 
-## 3. Pipelines & scripts
+## 3. Pipeline and scripts
 
-This section describes how to move from a clean checkout to a retrieval-ready corpus and evaluation data. It assumes `uv sync` has already been run.
+This section describes the execution path from a clean checkout to a retrieval-ready corpus and comparative retrieval evaluation.
 
-### 3.1 Download and extract sources
+It assumes that:
 
-1. **Download HTML and PDF sources**
+```bash
+uv sync
+```
 
-   ```bash
-   uv run python src/download_sources.py
-   ```
+has already completed and `DATABASE_URL` is configured.
 
-   - Reads `data/source_manifest_core.csv`.
-   - Downloads HTML pages into `data/raw/html/`.
-   - Downloads PDFs into `data/raw/pdf/`.
-   - Writes `data/download_metadata.json` with basic provenance for each download.
+### Reproduction modes
 
-2. **Extract HTML to Markdown**
+This project supports two related, but distinct, workflows:
 
-   ```bash
-   uv run python src/extract.py data/raw/html
-   ```
+1. **Strict v1 baseline reproduction**  
+   Restore the reviewed Markdown snapshot, then rebuild chunks, the PostgreSQL index, embeddings, and retrieval metrics. Use this path to reproduce the current evaluated corpus and retrieval baseline.
 
-   - Parses HTML content.
-   - Writes cleaned Markdown (first pass) to `data/processed/`.
+2. **Fresh corpus rebuild**  
+   Download current ACSC sources, extract them, manually review the generated Markdown, and create a new reviewed corpus snapshot before rebuilding downstream artefacts. Use this path when intentionally updating the corpus.
 
-3. **Extract PDFs to Markdown**
+Do not treat a fresh download/extraction as equivalent to strict v1 reproduction, because ACSC source documents, extraction outputs, and semi-manual Markdown cleanup may differ.
 
-   ```bash
-   uv run python src/extract_pdfs.py data/raw/pdf
-   ```
+### 3.1 Download source documents (fresh rebuild only)
 
-   - Extracts text from PDFs.
-   - Writes cleaned Markdown (first pass) to `data/processed/`.
+To build a new corpus from upstream ACSC sources, download all manifest-defined core sources:
 
-At this point, all core sources exist as Markdown files in `data/processed/`.
+```bash
+uv run python src/download_sources.py
+```
 
-### 3.2 Manual Markdown review
+This script:
 
-After extraction, perform a one-time manual review of the processed Markdown files to correct extraction artefacts. Typical corrections:
+- reads `data/source_manifest_core.csv`
+- downloads HTML pages into `data/raw/html/`
+- downloads PDFs into `data/raw/pdf/`
+- writes download provenance to:
 
-- broken or missing headings
-- repeated headers, footers, or navigation text
+```text
+data/download_metadata.json
+```
+
+For strict v1 reproduction using the existing snapshot, you can skip this step and restore the snapshot instead (see 3.3).
+
+### 3.2 Extract sources into Markdown (fresh rebuild only)
+
+Extract HTML:
+
+```bash
+uv run python src/extract.py data/raw/html
+```
+
+Extract PDFs:
+
+```bash
+uv run python src/extract_pdfs.py data/raw/pdf
+```
+
+These scripts:
+
+- parse or extract raw source content
+- write first-pass Markdown files to:
+
+```text
+data/processed/
+```
+
+At this point, all in-scope source documents should exist as Markdown files in `data/processed/`.
+
+### 3.3 Reviewed corpus snapshot
+
+Manual Markdown review is a semi-manual quality-control step, so a fresh extraction may not reproduce the exact reviewed corpus used for the current retrieval baseline.
+
+The repository preserves the reviewed Markdown used by the current v1 corpus as a versioned snapshot, for example:
+
+```text
+data/corpus_snapshots/v1_2026-07-25/
+```
+
+This snapshot contains:
+
+- reviewed Markdown files copied from `data/processed/`
+- `manifest.csv` — the source manifest associated with this snapshot
+- `checksums.sha256` — file checksums for snapshot verification
+
+To **reproduce the current v1 baseline**, restore the snapshot into the working processed-corpus directory:
+
+```bash
+mkdir -p data/processed
+cp -iv data/corpus_snapshots/v1_2026-07-25/*.md data/processed/
+```
+
+Then continue from chunk preparation (3.4) onward.
+
+The `data/processed/` directory remains the overwriteable working location for new extraction and manual cleanup. The snapshot directory should not be modified in place; if the corpus is updated later, create a new dated snapshot directory and document the change in `docs/project-log.md`.
+
+### 3.4 Manual Markdown review (fresh rebuild only)
+
+Perform a one-time manual review of the Markdown files in `data/processed/`.
+
+Typical corrections include:
+
+- broken, missing, or misplaced headings
+- repeated headers, footers, page numbers, or navigation text
 - duplicated paragraphs
-- missing or malformed lists
-- table structure problems
-- PDF reading-order issues
+- malformed or missing lists
+- table-structure problems
+- PDF reading-order artefacts
+- paragraphs placed under an incorrect heading after extraction
 
-The goal is to fix extraction noise, not to rewrite content. The reviewed files form the “cleaned corpus” used by the chunker.
+The purpose is to remove extraction noise and restore document structure, not to rewrite ACSC guidance or alter meaning.
 
-### 3.3 Chunk preparation
+The reviewed Markdown files are the cleaned corpus used by `src/prepare_chunks.py`.
 
-4. **Prepare retrieval-ready chunks**
+#### Manual-review limitation
 
-   ```bash
-   uv run python src/prepare_chunks.py
-   ```
+Markdown cleanup is a documented manual checkpoint rather than a fully deterministic transformation. For strict reproduction of the current corpus, use the reviewed Markdown snapshot under:
 
-   - Reads cleaned Markdown from `data/processed/`.
-   - Applies a heading-aware, structure-preserving chunking strategy.
-   - Builds chunk records with fields such as:
-     - `chunk_id`
-     - `source_id`, `source_file`
-     - `chunk_index`, `chunking_version`
-     - `document_title`, `heading_path`
-     - `size_audience_tag`, `role_audience_tags` (copied from the manifest)
-     - `chunk_text`
-     - diagnostic fields (`chunk_chars`, `chunk_words`, `chunk_lines`)
-   - Writes the retrieval-ready corpus to `data/chunks/chunks.jsonl`.
+```text
+data/corpus_snapshots/
+```
 
-This JSONL file is the canonical text representation of the retrieval corpus.
+rather than repeating the cleanup.
 
-### 3.4 Chunk spot-check
+If upstream ACSC documents, extraction tools, or Markdown structure change:
 
-5. **Export sampled chunks for manual QA**
+1. Repeat the manual review on the new `data/processed/` files.
+2. Record meaningful corpus changes in `docs/project-log.md`.
+3. Create a new snapshot directory under `data/corpus_snapshots/` for the updated reviewed corpus.
+4. Regenerate downstream chunk, database, embedding, and evaluation artefacts.
+5. Treat the result as a new corpus version rather than assuming direct metric comparability.
 
-   ```bash
-   uv run python src/spotcheck_chunks.py
-   ```
+### 3.5 Prepare retrieval chunks
 
-   - Reads `data/chunks/chunks.jsonl`.
-   - Writes sampled chunks to:
-     - `data/chunks/spotcheck.jsonl`
-     - `data/chunks/spotcheck.json`
+Generate the retrieval-ready corpus:
 
-Use these files to manually check that:
+```bash
+uv run python src/prepare_chunks.py
+```
 
-- `heading_path` matches the cleaned Markdown structure.
-- `size_audience_tag` and `role_audience_tags` are correctly propagated.
-- lists and tables are not badly broken.
-- paired risk / mitigation sections remain coherent where intended.
+The script:
 
-This is a lightweight QA step between chunking and retrieval indexing.
+- reads reviewed Markdown files from `data/processed/`
+- uses heading-aware, structure-preserving chunking
+- propagates document-level audience metadata from the manifest
+- writes retrieval-ready records to:
 
-### 3.5 Seed matching and vetting
+```text
+data/chunks/chunks.jsonl
+```
 
-6. **Define seed configuration**
+Each chunk includes fields such as:
 
-   - Edit `data/ground_truth_seed_draft.json` to describe important passages and audience slices to test.
-   - Each seed includes fields such as:
-     - `source_id`
-     - `target_size`, `target_role`
-     - `passage_type`
-     - `why_this_passage`
-     - `best_heading_path_guess`
-     - optional `numbered_item_title_guess`
-     - optional `anchor_quote`
+- `chunk_id`
+- `source_id`
+- `source_file`
+- `chunk_index`
+- `chunking_version`
+- `document_title`
+- `heading_path`
+- `size_audience_tag`
+- `role_audience_tags`
+- `chunk_text`
+- diagnostic fields:
+  - `chunk_chars`
+  - `chunk_words`
+  - `chunk_lines`
 
-7. **Match seeds to concrete chunks**
+`data/chunks/chunks.jsonl` is the canonical text representation of the retrieval corpus.
 
-   ```bash
-   uv run python src/match_seeds_to_chunks.py
-   ```
+### 3.6 Spot-check chunks
 
-   - Reads `data/chunks/chunks.jsonl` and `data/ground_truth_seed_draft.json`.
-   - Resolves each seed to a specific chunk `chunk_id`, preferring numbered list items when `numbered_item_title_guess` is present.
-   - Writes candidates and debug information to `data/seed_chunk_candidates.json`.
+Export a sample of chunks for manual quality assurance:
 
-8. **Vet seed passages with an LLM judge**
+```bash
+uv run python src/spotcheck_chunks.py
+```
 
-   - Run the LLM judging step (using `src/llm_client.py` and a small evaluation script) over `data/seed_chunk_candidates.json`.
-   - Produce a vetted seed file such as `data/ground_truth_seeds_vetted.jsonl`, including:
-     - `include_for_eval`
-     - `seed_quality`
-     - `suggested_passage_type`
-     - `reason`.
+The script reads:
 
-This ensures that only coherent, audience-appropriate passages are used for synthetic question generation.
+```text
+data/chunks/chunks.jsonl
+```
 
-### 3.6 Synthetic question generation
+and writes:
 
-9. **Generate ground-truth questions (A → Q\*)**
+```text
+data/chunks/spotcheck.jsonl
+data/chunks/spotcheck.json
+```
 
-   ```bash
-   uv run python src/generate_ground_truth_questions.py
-   ```
+Review sampled records to confirm that:
 
-   - Reads vetted seeds from `data/ground_truth_seeds_vetted.jsonl`.
-   - Uses `candidate_chunk` content plus audience metadata to generate realistic questions.
-   - Writes outputs to `data/ground_truth_synthetic.jsonl`, preserving:
-     - `chunk_id`
-     - `source_id`
-     - `size_audience_tag`, `role_audience_tags`
-     - `target_size`, `target_role`
-     - generated question text.
+- `heading_path` reflects the reviewed Markdown structure
+- `size_audience_tag` and `role_audience_tags` are correctly propagated
+- lists and tables remain sufficiently coherent
+- risk/mitigation and other paired content remains together where intended
+- no obvious extraction or chunking artefact has been introduced
 
-Batch generation is paced (e.g. fixed delay between requests) and uses retry handling in the shared LLM client to respect rate limits.
+This is a lightweight QA checkpoint between chunking and retrieval indexing. It increases confidence in corpus structure but does not replace retrieval evaluation.
 
-### 3.7 Retrieval index (PostgreSQL)
+### 3.7 Define evaluation seeds
 
-10. **Initialise the database schema**
+Edit the curated seed configuration:
 
-    ```bash
-    uv run python src/db_init.py
-    ```
+```text
+data/ground_truth_seed_draft.json
+```
 
-    - Creates the `chunks` table with the current schema.
-    - Adds indexes on full-text search and audience metadata.
+Each seed describes an important ACSC passage and audience slice to test. Typical fields include:
 
-11. **Load chunks into PostgreSQL**
+- `source_id`
+- `target_size`
+- `target_role`
+- `passage_type`
+- `why_this_passage`
+- `best_heading_path_guess`
+- optional `numbered_item_title_guess`
+- optional `anchor_quote`
 
-    ```bash
-    uv run python src/db_load_chunks.py
-    ```
+Seeds are evaluation design inputs, not ground truth by themselves.
 
-    - Reads `data/chunks/chunks.jsonl`.
-    - Normalises `heading_path` and `role_audience_tags` into JSON arrays.
-    - Builds `search_text` from titles, headings, audience tags, and `chunk_text`.
-    - Upserts rows into the `chunks` table keyed by `chunk_id`.
+### 3.8 Match seeds to chunks
 
-12. **Run text retrieval**
+Resolve seed intents to concrete chunk IDs:
 
-    ```bash
-    uv run python src/retrieve_text.py "your query"
-    ```
+```bash
+uv run python src/match_seeds_to_chunks.py
+```
 
-    - Uses PostgreSQL full-text search and ranking.
-    - Supports optional `--size-tag` and `--role-tag` filters.
-    - Returns top‑k chunks (default `k=5`, configurable) for inspection and evaluation.
+The script:
 
-### 3.8 Retrieval evaluation (text retriever)
+- reads:
+  - `data/chunks/chunks.jsonl`
+  - `data/ground_truth_seed_draft.json`
+- groups candidate chunks by `source_id`
+- prefers matching a numbered item when `numbered_item_title_guess` is supplied
+- otherwise ranks chunks using heading-path, leaf-heading, title, and anchor-quote signals
+- writes candidate selections and debugging information to:
 
-After the PostgreSQL `chunks` table is populated and the text retriever is in place, a fresh checkout can reproduce retrieval evaluation over the synthetic question set.
+```text
+data/seed_chunk_candidates.json
+```
 
-13. **Run retrieval evaluation over synthetic questions**
+Output records include:
 
-    ```bash
-    uv run python src/evaluate_retrieval.py
-    ```
+- `candidate_chunk`
+- `candidate_debug`
+- `match_score`
+- `selection_confidence`
+- `score_margin`
+- `selection_strategy`
 
-    - Reads `data/ground_truth_synthetic.jsonl`.
-    - Uses `src/retrieve_text.py` as one retrieval backend.
-    - Computes strict and relaxed retrieval metrics such as:
-      - strict Hit@k and MRR based on exact `chunk_id` matches,
-      - relaxed Hit@k and MRR where:
-        - exact `chunk_id` matches score highest,
-        - chunks from the same `source_id` and final heading (leaf of `heading_path`) count as partial hits.
-    - Prints metrics and, in debug mode, a top‑k listing per question showing:
-      - `chunk_id`, `source_id`,
-      - leaf heading,
-      - text-search score.
+### 3.9 Vet seed passages
 
-#### Baseline text retrieval behaviour
+Vet matched seed passages with the project’s LLM-assisted seed-review workflow.
 
-The current text retriever (`src/retrieve_text.py`) is implemented to:
+The vetting process uses the selected `candidate_chunk` and records whether the passage is appropriate for synthetic question generation. The output is:
 
-- compute a relevance score for chunks using:
-  - `ts_rank(fts, websearch_to_tsquery('english', query), 1)`
-- filter results on `score > 0` instead of requiring a strict boolean match on:
-  - `fts @@ websearch_to_tsquery('english', query)`
-- preserve optional audience filters:
-  - `size_audience_tag` (with `all_sizes` as a fallback), and
-  - `role_audience_tags` (JSONB array containment)
-- return the top‑k ranked chunks (default `k=5`, configurable) ordered by score and chunk length.
+```text
+data/ground_truth_seeds_vetted.jsonl
+```
 
-This change makes retrieval more robust for long, conversational questions while keeping the corpus, manifest, and chunk schema unchanged.
+Vetted records include fields such as:
 
-### 3.9 Vector index and comparative retrieval evaluation
+- `seed_id`
+- `chunk_id`
+- `include_for_eval`
+- `seed_quality`
+- `suggested_passage_type`
+- `reason`
 
-In addition to the text-based retrieval baseline, the project includes a pgvector-backed dense retrieval index and a comparative evaluation harness that reports metrics for both text and vector retrieval on the same synthetic question set.
+Use the exact repository entry point that performs seed vetting. If the vetting workflow is currently a one-off invocation rather than a committed script, document the exact command or add a dedicated script before describing this stage as fully reproducible.
 
-14. **Build pgvector embeddings for all chunks**
+#### LLM-assisted pipeline limitation
 
-    ```bash
-    uv run python src/db_build_embeddings.py
-    ```
+Seed vetting uses an external LLM service, so regenerated judgements may vary across model versions, provider behaviour, and runs.
 
-    - Loads a local sentence-transformers model (MiniLM) once.
-    - Reads all rows from the `chunks` table.
-    - Computes a normalised embedding for each chunk’s `chunk_text` (plus supporting fields as configured in the script).
-    - Writes the embeddings into a `chunk_embedding` column using pgvector.
-    - Logs progress as chunks are embedded so another person can see that all rows have been processed.
+The committed vetted-seed output is the canonical input for reproducing the current benchmark. Regenerating it should be treated as creating a new evaluation-data version, not as an expectation of byte-for-byte identical results.
 
-15. **Run comparative retrieval evaluation (text vs vector)**
+### 3.10 Generate synthetic questions
 
-    ```bash
-    uv run python src/evaluate_retrieval.py
-    ```
+Generate A → Q* synthetic retrieval questions from vetted seed passages:
 
-    - Reads `data/ground_truth_synthetic.jsonl`.
-    - Uses both retrieval helpers:
-      - `src/retrieve_text.py` (PostgreSQL full-text search),
-      - `src/retrieve_vector.py` (pgvector nearest neighbour search over MiniLM embeddings).
-    - Computes strict and relaxed retrieval metrics separately for each retriever:
-      - strict Hit@k and MRR based on exact `chunk_id` matches,
-      - relaxed Hit@k and MRR where:
-        - exact `chunk_id` matches score highest,
-        - chunks from the same `source_id` and final heading (leaf of `heading_path`) count as partial hits.
-    - Prints a JSON summary with separate metric blocks for text and vector retrieval, so their performance can be compared on the same synthetic question set.
+```bash
+uv run python src/generate_ground_truth_questions.py
+```
 
-With the vector index in place, another practitioner can run both text and vector retrievers over arbitrary queries (with the same audience filters and corpus) and rerun `src/evaluate_retrieval.py` to obtain metrics for each approach. The underlying dataset, manifest, chunking strategy, and seed/question generation pipeline remain unchanged, so all prior reproducibility guarantees still hold.
+The script:
 
-### 3.10 Hybrid retrieval and multi-backend evaluation
+- reads vetted seeds from:
 
-With both text and vector retrieval in place, the evaluation harness also supports a simple hybrid retriever and multi-backend comparison on the same synthetic question set.
+```text
+data/ground_truth_seeds_vetted.jsonl
+```
 
-16. **Run hybrid retrieval and multi-backend evaluation**
+- uses the matched `candidate_chunk` and audience metadata as generation context
+- generates one realistic question per included seed
+- writes outputs to:
 
-    ```bash
-    uv run python src/evaluate_retrieval.py
-    ```
+```text
+data/ground_truth_synthetic.jsonl
+```
 
-    - Reads `data/ground_truth_synthetic.jsonl`.
-    - Uses three retrieval backends:
-      - `src/retrieve_text.py` (lexical, PostgreSQL full-text search),
-      - `src/retrieve_vector.py` (semantic, pgvector nearest-neighbour search over MiniLM embeddings),
-      - `src/retrieve_hybrid.py` (hybrid, reciprocal-rank-fusion over text and vector results).
-    - For each backend, computes:
-      - strict Hit@k and MRR based on exact `chunk_id` matches,
-      - relaxed Hit@k and MRR where:
-        - exact `chunk_id` matches score highest,
-        - chunks from the same `source_id` and final heading (leaf of `heading_path`) count as partial hits.
-    - Prints a JSON summary with a separate metric block for each backend (`text`, `vector`, `hybrid`).
+Generated records retain provenance and audience fields, including:
 
-17. **Optional: write per-question debug output for manual inspection**
+- `chunk_id`
+- `source_id`
+- `size_audience_tag`
+- `role_audience_tags`
+- `target_size`
+- `target_role`
+- generated question text
 
-    ```bash
-    uv run python src/evaluate_retrieval.py --debug-output data/eval_retrieval_debug.jsonl
-    ```
+Batch generation uses retry handling from `src/llm_client.py` and pacing in the batch script to reduce API-rate-limit failures.
 
-    - Writes one JSON record per question and per backend, including:
-      - the question text and audience fields (`target_size`, `target_role`),
-      - gold labels (`chunk_id`, `source_id`, leaf heading),
-      - strict and relaxed relevance scores for the top‑k results,
-      - top‑k retrieval metadata for each backend:
-        - for text: rank, `chunk_id`, `source_id`, leaf heading, text search score,
-        - for vector: rank, `chunk_id`, `source_id`, leaf heading, cosine distance and similarity,
-        - for hybrid: rank, `chunk_id`, `source_id`, leaf heading, `hybrid_score`, and, where available, `text_rank`, `vector_rank`, `text_score`, and `vector_similarity`.
+#### Synthetic-benchmark limitation
 
-This debug file is intended for manual error analysis (for example, inspecting cases where hybrid helps or hurts relative to vector) and does not change any of the underlying datasets or corpus structure.
+The synthetic benchmark is seed-anchored: each question is generated from a vetted ACSC passage linked to a known chunk.
 
-From a reproducibility perspective:
+It supports controlled retrieval comparison because each question has traceable gold evidence. It does not by itself establish performance on naturally phrased user questions, incomplete audience context, ambiguous requests, adversarial wording, or multi-source information needs.
 
-- the manifest, cleaned Markdown corpus, chunking strategy, and `data/chunks/chunks.jsonl` remain the same,
-- the same synthetic question set (`data/ground_truth_synthetic.jsonl`) is used for all backends,
-- the PostgreSQL `chunks` table continues to serve as the canonical retrieval index, extended with `chunk_embedding` for vector search and reused by the hybrid retriever.
+The committed file:
 
+```text
+data/ground_truth_synthetic.jsonl
+```
+
+is the canonical evaluation input for reproducing the current reported retrieval baseline.
+
+### 3.11 Initialise PostgreSQL
+
+Create the retrieval schema and required database extension:
+
+```bash
+uv run python src/db_init.py
+```
+
+The script:
+
+- creates the PostgreSQL `vector` extension if available
+- creates the `chunks` table
+- creates supporting indexes for:
+  - full-text search
+  - source ID
+  - organisation-size metadata
+  - role metadata
+  - vector retrieval, where configured
+
+The `chunks` table is the canonical database-backed retrieval index. It contains chunk provenance, audience metadata, text-search fields, and vector embeddings after the embedding-build step.
+
+### 3.12 Load chunks into PostgreSQL
+
+Load the canonical JSONL corpus:
+
+```bash
+uv run python src/db_load_chunks.py
+```
+
+The script:
+
+- reads:
+
+```text
+data/chunks/chunks.jsonl
+```
+
+- normalises `heading_path` and `role_audience_tags` into JSON arrays
+- constructs `search_text` from:
+  - document title
+  - heading path
+  - audience metadata
+  - chunk text
+- upserts rows into the `chunks` table using `chunk_id` as the key
+
+The loader can be rerun safely after corpus changes. If source content, chunking, or metadata changes, rerun this step before rebuilding embeddings and evaluation baselines.
+
+### 3.13 Build pgvector embeddings
+
+Build or refresh vector embeddings for indexed chunks:
+
+```bash
+uv run python src/db_build_embeddings.py
+```
+
+The script:
+
+- loads the configured local sentence-transformers model once
+- reads chunk records from the PostgreSQL `chunks` table
+- creates normalised embeddings from `chunk_text` and any supporting fields configured by the script
+- writes vectors into the pgvector `chunk_embedding` column
+- logs progress while processing chunks
+
+Run this script whenever:
+
+- the chunk corpus changes
+- the embedded text representation changes
+- the embedding model changes
+- embeddings have not yet been built after a fresh database initialisation
+
+### 3.14 Run manual retrieval checks
+
+The repository provides three audience-aware retrieval helpers.
+
+Text retrieval:
+
+```bash
+uv run python src/retrieve_text.py "your query"
+```
+
+Vector retrieval:
+
+```bash
+uv run python src/retrieve_vector.py "your query"
+```
+
+Hybrid retrieval:
+
+```bash
+uv run python src/retrieve_hybrid.py "your query"
+```
+
+All retrieval helpers support optional audience filters:
+
+```bash
+--size-tag <size_audience_tag>
+--role-tag <role_audience_tag>
+```
+
+For example:
+
+```bash
+uv run python src/retrieve_vector.py \
+  "How can a small business reduce the risk of data leakage when using AI tools?" \
+  --size-tag small_business \
+  --role-tag ai_consumer \
+  --limit 5
+```
+
+Audience semantics are consistent across retrievers:
+
+- a requested size returns chunks tagged with that size and chunks tagged `all_sizes`
+- a requested role returns chunks containing that role in `role_audience_tags`
+- no filter returns eligible chunks without applying the corresponding audience constraint
+
+### 3.15 Run comparative retrieval evaluation
+
+Evaluate text, vector, and hybrid retrieval against the same synthetic question set:
+
+```bash
+uv run python src/evaluate_retrieval.py
+```
+
+The evaluator:
+
+- reads:
+
+```text
+data/ground_truth_synthetic.jsonl
+```
+
+- evaluates:
+  - `src/retrieve_text.py`
+  - `src/retrieve_vector.py`
+  - `src/retrieve_hybrid.py`
+- calculates, for each backend:
+  - strict Hit@k
+  - strict MRR
+  - relaxed Hit@k
+  - relaxed MRR
+
+Strict metrics require an exact `chunk_id` match.
+
+Relaxed metrics allow partial relevance where a retrieved chunk shares:
+
+- the same `source_id`, and
+- the same leaf heading, meaning the final element of `heading_path`
+
+The evaluator prints a backend-specific metric summary so results can be compared under the same corpus, question set, audience metadata, and relevance rules.
+
+### 3.16 Export retrieval debug records
+
+Optionally write backend-specific per-question debug output:
+
+```bash
+uv run python src/evaluate_retrieval.py \
+  --debug-output data/eval/retrieval_debug.jsonl
+```
+
+Use the actual configured output path consistently across the repository. If the current script uses a different filename, update this command and all documentation to match it.
+
+The debug output contains one record per question and backend, including:
+
+- question text
+- audience fields:
+  - `target_size`
+  - `target_role`
+- gold labels:
+  - `chunk_id`
+  - `source_id`
+  - leaf heading
+- strict and relaxed relevance flags or scores
+- retrieved top-k metadata
+
+Backend-specific debug data includes:
+
+- text:
+  - rank
+  - text-search score
+- vector:
+  - rank
+  - cosine distance
+  - similarity
+- hybrid:
+  - rank
+  - `hybrid_score`
+  - `text_rank`
+  - `vector_rank`
+  - `text_score`
+  - `vector_similarity`, where available
+
+Use this file to inspect cases where:
+
+- vector succeeds while text or hybrid fails
+- hybrid helps or harms relative to vector
+- the gold chunk is missed but a same-section partial match appears
+- audience metadata or source overlap affects ranking
+
+### 3.17 Selected retrieval baseline
+
+The current project evaluates text, vector, and hybrid retrieval over the same synthetic benchmark.
+
+On the current benchmark:
+
+- text retrieval is retained as a lexical baseline and debugging path
+- hybrid reciprocal-rank fusion improves on text retrieval
+- vector retrieval is the strongest-performing backend
+- hybrid does not outperform vector retrieval
+
+Accordingly, `src/retrieve_vector.py` is the preferred retrieval baseline for the first answer-generation stage.
+
+Text and hybrid retrieval remain available as reproducible comparison and debugging backends. Any future reranking, query rewriting, hybrid weighting, or embedding-model change should be evaluated against the current vector baseline rather than assumed to be an improvement.
+
+### 3.18 Vector-based answer generation and LLM-as-judge evaluation
+
+In addition to retrieval evaluation, the project preserves a derived answer-generation and judge layer that operates on the existing retrieval corpus and synthetic question set.
+
+#### 3.18.1 Generate vector-based grounded answers
+
+Generate grounded answers for the synthetic question set using the vector retriever:
+
+```bash
+uv run python src/generate_answers.py
+```
+
+This script:
+
+- reads synthetic questions from `data/ground_truth_synthetic.jsonl`
+- uses the vector retriever (typically `top_k=5`) with audience filters derived from:
+  - `target_size`
+  - `target_role`
+- assembles a structured list of retrieved chunks per question
+- calls the LLM client helper to generate a grounded answer conditioned on:
+  - the question,
+  - the retrieved chunk metadata and text,
+  - and the audience intent
+- writes one JSON object per question to:
+
+```text
+data/answers/answers_vector_v2_prompt_grounded.jsonl
+```
+
+The earlier baseline answer-generation variant is preserved at:
+
+```text
+data/answers/answers_vector_v1.jsonl
+```
+
+Each record typically includes:
+
+- `question_id`, `question`, `seed_id`
+- `target_size`, `target_role`
+- `gold_source_id`, `gold_chunk_id`
+- `retrieved_chunks`
+- `answer_text`
+- `answer_chunk_ids`
+- `grounded`
+- `model_id`, `top_k`, and `usage` diagnostics
+
+#### 3.18.2 Judge answers against gold passages
+
+Evaluate the generated answers against their gold passages using the project’s fixed judge pipeline:
+
+```bash
+uv run python src/judge_answers.py
+```
+
+This script:
+
+- loads the chunk corpus from `data/chunks/chunks.jsonl`
+- builds an in-memory index keyed by `chunk_id`
+- reads generated answers from the answer JSONL files
+- looks up the gold passage for each answer via `gold_chunk_id`
+- applies a rubric that focuses on semantic equivalence, completeness, and named-resource coverage when the question asks for specific resources
+- writes judged records to the corresponding judged output files
+
+The project preserves judged outputs for both answer-generation variants:
+
+- `data/answers/answers_vector_v1_judged.jsonl`
+- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`
+
+Each judged record extends the answer fields with:
+
+- `judge_model_id`
+- `judge_score`
+- `judge_reasoning`
+- `judge_gold_chunk_text`
+- `judge_gold_heading_path`
+- `judge_usage`
+
+#### 3.18.3 Preserved script versions
+
+The earlier scripts for this stage are preserved as:
+
+```text
+generate_answers_v1.py
+judge_answers_v1.py
+```
+
+These files, together with the v1 and v2 JSONL outputs, document the progression of the answer-generation workflow without overwriting the earlier implementation.
+
+#### 3.18.4 Optional analysis outputs
+
+Aggregations over the judged files, such as the proportion of `good` answers by `target_size`, `target_role`, or `source_id`, can be computed in separate analysis scripts and regenerated as needed. These are derived outputs and are not treated as primary corpus artefacts.
+  
 ---
 
 ## 4. Outputs
 
-By following the steps above, a fresh checkout can reproduce the main data artefacts:
+Following the workflow above produces or recreates the following artefacts.
 
-- Raw downloads:
-  - `data/raw/html/`
-  - `data/raw/pdf/`
-- Cleaned corpus:
-  - `data/processed/` (Markdown)
-- Chunk corpus:
-  - `data/chunks/chunks.jsonl`
-  - `data/chunks/spotcheck.jsonl`
-  - `data/chunks/spotcheck.json`
-- Evaluation configuration and data:
-  - `data/ground_truth_seed_draft.json`
-  - `data/seed_chunk_candidates.json`
-  - `data/ground_truth_seeds_vetted.jsonl`
-  - `data/ground_truth_synthetic.jsonl`
-- Retrieval index:
-  - PostgreSQL `chunks` table populated from `data/chunks/chunks.jsonl`
-  - text retrieval behaviour via `src/retrieve_text.py`
-  - vector retrieval behaviour via `src/retrieve_vector.py`
+### Raw source data
+
+```text
+data/raw/html/
+data/raw/pdf/
+data/download_metadata.json
+```
+
+### Reviewed corpus and snapshots
+
+```text
+data/processed/
+data/corpus_snapshots/v1_2026-07-25/
+```
+
+### Chunk corpus and QA artefacts
+
+```text
+data/chunks/chunks.jsonl
+data/chunks/spotcheck.jsonl
+data/chunks/spotcheck.json
+```
+
+### Evaluation configuration and data
+
+```text
+data/ground_truth_seed_draft.json
+data/seed_chunk_candidates.json
+data/ground_truth_seeds_vetted.jsonl
+data/ground_truth_synthetic.jsonl
+```
+
+### Retrieval index
+
+```text
+PostgreSQL chunks table
+PostgreSQL full-text-search fields and indexes
+PostgreSQL pgvector chunk_embedding values
+```
+
+### Retrieval interfaces
+
+```text
+src/retrieve_text.py
+src/retrieve_vector.py
+src/retrieve_hybrid.py
+```
+
+### Retrieval-evaluation outputs
+
+```text
+Console or structured metric summary from src/evaluate_retrieval.py
+Optional per-question debug output, for example:
+data/eval/retrieval_debug.jsonl
+```
+
+### Answer-generation and judge outputs
+
+```text
+data/answers/answers_vector_v1.jsonl
+data/answers/answers_vector_v1_judged.jsonl
+data/answers/answers_vector_v2_prompt_grounded.jsonl
+data/answers/answers_vector_v2_prompt_grounded_judged.jsonl
+```
 
 ---
 
@@ -386,14 +837,19 @@ By following the steps above, a fresh checkout can reproduce the main data artef
 
 From a clean clone, another practitioner can:
 
-1. Create the same Python environment with `uv sync`.
-2. Download the same ACSC sources using the manifest.
-3. Extract and manually review Markdown in `data/processed/`.
-4. Regenerate `data/chunks/chunks.jsonl` via heading-aware chunking.
-5. Spot-check sampled chunks before indexing.
-6. Recreate the seed configuration, seed–chunk matches, and vetted seeds.
-7. Regenerate synthetic ground-truth questions.
-8. Build and populate the PostgreSQL `chunks` table.
-9. Run text and vector retrieval over the synthetic question set and manual test queries, and rerun the comparative evaluation to obtain metrics for both approaches.
+1. Create the pinned Python environment with `uv sync`.
+2. Configure a PostgreSQL database connection using `DATABASE_URL`.
+3. Either:
+   - restore the reviewed Markdown snapshot under `data/corpus_snapshots/` into `data/processed/` for strict v1 baseline reproduction, or
+   - download and extract ACSC sources and perform a new manual Markdown review for a fresh corpus rebuild.
+4. Regenerate heading-aware chunks and inspect sampled chunk records.
+5. Recreate deterministic seed-to-chunk matching.
+6. Reuse committed LLM-vetted seed and synthetic-question artefacts to reproduce the current benchmark, or regenerate them as a new evaluation-data version.
+7. Initialise and populate the PostgreSQL retrieval index.
+8. Build pgvector embeddings using the configured sentence-transformers model.
+9. Run text, vector, and hybrid retrieval over manual queries with the same audience-filter semantics.
+10. Rerun comparative retrieval evaluation over the same synthetic question set.
+11. Export per-question debug records to inspect backend-specific rankings, scores, relevance labels, and audience context.
+12. Reproduce the selected vector retrieval baseline, and also reproduce the derived answer-generation and judge stage using the preserved v1 and v2 answer artefacts and scripts.
 
-Project design details (problem framing, dataset notes, decisions, and log) are documented separately in `docs/dataset-notes.md`, `docs/decisions.md`, and `docs/project-log.md` so this file can stay focused on “how to reproduce” rather than “why the project is structured this way`.
+This document intentionally stops at the evaluated retrieval baseline as the core reproducibility path. The grounded answer-generation and judge layer is a derived evaluation stage built on top of the existing retrieval artefacts, and it can be rerun separately using the preserved v1 and v2 outputs and scripts.

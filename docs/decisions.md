@@ -481,3 +481,47 @@ Sticking with only text and vector would keep the system simpler but leave the q
   all sharing the same chunk schema and audience-aware filters.
 - `src/evaluate_retrieval.py` reports strict and relaxed metrics for all three backends in a single run and can emit per-question debug records for deeper analysis.
 - On the current synthetic evaluation set, vector retrieval remains the strongest performer; hybrid retrieval substantially improves over text-only but does not outperform vector-only, so vector continues as the preferred baseline for downstream RAG work, with hybrid treated as an evaluated alternative and debugging aid.
+
+## D-011 — Adopt answer-generation v2 as the default grounded answer-generation strategy
+Date: 2026-07-26
+Status: Accepted
+
+### Decision
+Adopt the prompt-grounded answer-generation pipeline in `src/generate_answers.py` as the default answer-generation strategy for the project, replacing the earlier v1 generation approach preserved in `src/generate_answers_v1.py`.
+
+### Context
+The project developed more than one vector-based answer-generation variant for the synthetic ACSC evaluation set. An earlier version generated `data/answers/answers_vector_v1.jsonl`. A revised version generated `data/answers/answers_vector_v2_prompt_grounded.jsonl` with stronger prompt-level grounding and more explicit retention of concrete ACSC guidance.
+
+Earlier testing became harder to interpret because different judge configurations had been used at different points. After re-running the comparison under a consistent judge setup, the project compared v1 and v2 on the same 27-question synthetic benchmark.
+
+### Reason
+The project chose answer-generation v2 because it performed better than v1 on the current judged benchmark and produced answers that were more complete, specific, and faithful to the source material.
+
+Under the final comparison, v2 achieved 26/27 `good` answers (96.3%) compared with 22/27 `good` answers (81.5%) for v1.
+
+The main observed advantages of v2 were:
+- better retention of named resources, frameworks, and standards,
+- stronger handling of multi-part questions,
+- and more explicit, actionable answer structure.
+
+By contrast, v1 more often over-summarised the source material, omitted concrete named items, or collapsed procedural guidance into high-level generalities.
+
+### Alternatives considered
+- Keep answer-generation v1 as the default strategy.
+- Preserve both v1 and v2 without selecting a preferred default.
+- Delay choosing a default answer-generation variant until a larger benchmark is available.
+
+### Trade-offs
+Choosing v2 improves answer quality, but it also increases average token usage relative to v1. On the current evaluation set, that increase was modest compared with the quality improvement, so the trade-off was acceptable for the project.
+
+The benchmark is still small, and the final comparison depends on an LLM judge rather than human-labelled evaluation. The result should therefore be treated as project-level evidence for selecting the stronger current prompt, not as a definitive production benchmark.
+
+### Impact
+- `src/generate_answers.py` becomes the default answer-generation script.
+- `src/generate_answers_v1.py` is retained for provenance and comparison.
+- `data/answers/answers_vector_v2_prompt_grounded.jsonl` becomes the primary generated-answer artefact.
+- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` becomes the primary judged output associated with the selected answer-generation strategy.
+- README, project log, and reproducibility notes should describe v2 as the selected answer-generation approach and v1 as the earlier baseline.
+
+### Notes
+The corrected comparison used a consistent judging setup after earlier testing proved unreliable. That evaluation cleanup is part of the project history, but the decision recorded here is the adoption of answer-generation v2 as the preferred project approach.
