@@ -1,4 +1,4 @@
-# Reproducibility
+# Runbook
 
 This project is designed so another person can recreate the Python environment, rebuild the ACSC corpus and PostgreSQL retrieval index, regenerate or reuse evaluation artefacts, and rerun comparative retrieval evaluation from a clean checkout.
 
@@ -17,8 +17,8 @@ The workflow combines manifest-defined source ingestion, scripted transformation
 - A PostgreSQL database user with permission to create or enable the `vector` extension
 - Internet access for:
   - downloading public ACSC source documents
-  - downloading the configured sentence-transformers embedding model on its first use, if it is not already cached
-  - LLM-assisted seed vetting and synthetic-question generation, when regenerating those artefacts
+  - downloading the configured sentence-transformers embedding model on first use, if not already cached
+  - LLM-assisted seed vetting, synthetic-question generation, answer generation, and answer judging when regenerating those artefacts
 
 ### Python setup
 
@@ -52,6 +52,24 @@ Before running database scripts:
 3. Confirm that `DATABASE_URL` points to the intended database.
 
 The project database helper in `src/db.py` loads `DATABASE_URL` from `.env` and exposes the shared connection logic used by database scripts.
+
+### Streamlit configuration
+
+The repository includes a local Streamlit configuration file at:
+
+```text
+.streamlit/config.toml
+```
+
+with:
+
+```toml
+[server]
+fileWatcherType = "none"
+runOnSave = false
+```
+
+This disables Streamlit file watching and automatic reruns on save. The setting is included because it avoids environment-specific watcher and rerun issues observed during local development and helps keep app behaviour stable when running `app.py`.
 
 ### Embedding model
 
@@ -126,7 +144,7 @@ ACSC may update source pages or PDFs. A new download can therefore differ from t
 
 ## 3. Pipeline and scripts
 
-This section describes the execution path from a clean checkout to a retrieval-ready corpus and comparative retrieval evaluation.
+This section describes the execution path from a clean checkout to a retrieval-ready corpus, comparative retrieval evaluation, optional answer-generation evaluation, and the interactive application.
 
 It assumes that:
 
@@ -146,7 +164,7 @@ This project supports two related, but distinct, workflows:
 2. **Fresh corpus rebuild**  
    Download current ACSC sources, extract them, manually review the generated Markdown, and create a new reviewed corpus snapshot before rebuilding downstream artefacts. Use this path when intentionally updating the corpus.
 
-Do not treat a fresh download/extraction as equivalent to strict v1 reproduction, because ACSC source documents, extraction outputs, and semi-manual Markdown cleanup may differ.
+Do not treat a fresh download and extraction as equivalent to strict v1 reproduction, because ACSC source documents, extraction outputs, and semi-manual Markdown cleanup may differ.
 
 ### 3.1 Download source documents (fresh rebuild only)
 
@@ -167,20 +185,20 @@ This script:
 data/download_metadata.json
 ```
 
-For strict v1 reproduction using the existing snapshot, you can skip this step and restore the snapshot instead (see 3.3).
+For strict v1 reproduction using the existing snapshot, you can skip this step and restore the snapshot instead.
 
 ### 3.2 Extract sources into Markdown (fresh rebuild only)
 
 Extract HTML:
 
 ```bash
-uv run python src/extract.py data/raw/html
+uv run python src/extract_text_html.py data/raw/html
 ```
 
 Extract PDFs:
 
 ```bash
-uv run python src/extract_pdfs.py data/raw/pdf
+uv run python src/extract_text_pdf.py data/raw/pdf
 ```
 
 These scripts:
@@ -210,14 +228,14 @@ This snapshot contains:
 - `manifest.csv` — the source manifest associated with this snapshot
 - `checksums.sha256` — file checksums for snapshot verification
 
-To **reproduce the current v1 baseline**, restore the snapshot into the working processed-corpus directory:
+To reproduce the current v1 baseline, restore the snapshot into the working processed-corpus directory:
 
 ```bash
 mkdir -p data/processed
 cp -iv data/corpus_snapshots/v1_2026-07-25/*.md data/processed/
 ```
 
-Then continue from chunk preparation (3.4) onward.
+Then continue from chunk preparation onward.
 
 The `data/processed/` directory remains the overwriteable working location for new extraction and manual cleanup. The snapshot directory should not be modified in place; if the corpus is updated later, create a new dated snapshot directory and document the change in `docs/project-log.md`.
 
@@ -347,12 +365,12 @@ Each seed describes an important ACSC passage and audience slice to test. Typica
 
 Seeds are evaluation design inputs, not ground truth by themselves.
 
-### 3.8 Match seeds to chunks
+### 3.8 Resolve seed draft IDs
 
 Resolve seed intents to concrete chunk IDs:
 
 ```bash
-uv run python src/match_seeds_to_chunks.py
+uv run python src/resolve_seed_draft_ids.py
 ```
 
 The script:
@@ -688,9 +706,9 @@ This script:
   - `target_role`
 - assembles a structured list of retrieved chunks per question
 - calls the LLM client helper to generate a grounded answer conditioned on:
-  - the question,
-  - the retrieved chunk metadata and text,
-  - and the audience intent
+  - the question
+  - the retrieved chunk metadata and text
+  - the audience intent
 - writes one JSON object per question to:
 
 ```text
@@ -747,19 +765,101 @@ Each judged record extends the answer fields with:
 
 #### 3.18.3 Preserved script versions
 
-The earlier scripts for this stage are preserved as:
+Earlier scripts for this stage are preserved for provenance and comparison, including:
 
 ```text
-generate_answers_v1.py
-judge_answers_v1.py
+src/generate_answers_v1.py
+src/judge_answers_v1.py
+src/judge_answers_v2.py
 ```
 
-These files, together with the v1 and v2 JSONL outputs, document the progression of the answer-generation workflow without overwriting the earlier implementation.
+These files, together with the v1 and v2 JSONL outputs, document the progression of the answer-generation and judging workflow without overwriting earlier implementations.
 
 #### 3.18.4 Optional analysis outputs
 
 Aggregations over the judged files, such as the proportion of `good` answers by `target_size`, `target_role`, or `source_id`, can be computed in separate analysis scripts and regenerated as needed. These are derived outputs and are not treated as primary corpus artefacts.
-  
+
+### 3.19 Interactive Streamlit UI and monitoring (optional)
+
+In addition to CLI scripts and notebooks, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer.
+
+#### 3.19.1 Start the Streamlit app
+
+From the project root, after completing the database bootstrap sequence (3.11–3.13):
+
+```bash
+uv run python -m streamlit run app.py
+```
+
+This is equivalent to `streamlit run app.py` inside the project environment. Streamlit will print the local app URL when the server starts.
+
+The repository includes `.streamlit/config.toml`, which disables file watching and automatic reruns on save to avoid local watcher issues. Keep that file in place when reproducing the Streamlit interface.
+
+The app provides two tabs:
+
+- **AI Navigator**
+  - free-text question input
+  - optional audience filters based on organisation size and role
+  - vector retrieval with configurable `top_k` (default 5)
+  - grounded answer display using the selected v2 prompt-grounded answer-generation pipeline
+  - an expandable evidence panel showing retrieved chunks, `heading_path`, audience tags, similarity or distance metadata, and chunk text
+
+- **Monitoring Dashboard**
+  - summary metrics for total conversations, average latency, total estimated cost, and feedback counts
+  - charts for response time per query, cost per query, token usage per request, and conversations per hour
+  - audience breakdown charts for queries by organisation size and queries by role
+  - a recent-conversations table with question, answer snippet, audience filters, latency, cost, and total tokens
+
+#### 3.19.2 Conversation and feedback logging
+
+The app reuses the existing PostgreSQL connection and writes monitoring data to two additional tables:
+
+- `conversations`
+  - stores question, answer text, model identifier, selected audience filters, prompt/completion/total token counts, response time, estimated cost, and timestamp for each interaction
+- `feedback`
+  - stores per-conversation thumbs-up or thumbs-down feedback and timestamps
+
+These monitoring tables are part of the same PostgreSQL-backed project environment as the retrieval index, but are separate from the `chunks` corpus table.
+
+#### 3.19.3 Reproducibility considerations
+
+The Streamlit app is an optional but reproducible entry point over the same corpus and retrieval pipeline described earlier in this document.
+
+It depends on the same:
+
+- reviewed corpus snapshot
+- heading-aware chunking output in `data/chunks/chunks.jsonl`
+- PostgreSQL `chunks` table
+- pgvector embeddings in `chunk_embedding`
+- vector retriever
+- v2 prompt-grounded answer-generation path
+
+Before starting the app, the database bootstrap sequence must be completed in order:
+
+```bash
+uv run python src/db_init.py
+uv run python src/db_load_chunks.py
+uv run python src/db_build_embeddings.py
+```
+
+If the embeddings step is skipped, the `chunk_embedding` column remains unpopulated and vector retrieval will return no chunks.
+
+The app logs conversations and feedback into PostgreSQL, but it does not modify:
+
+- the reviewed corpus snapshot
+- the chunk corpus
+- the seed manifest or vetted seeds
+- the synthetic evaluation questions
+- the answer datasets
+- the judged answer datasets
+
+Another practitioner can therefore:
+
+1. Rebuild or restore the reviewed corpus and regenerate `data/chunks/chunks.jsonl`.
+2. Run the three-step PostgreSQL bootstrap sequence in order.
+3. Start the app with `uv run python -m streamlit run app.py`.
+4. Interact with the AI Navigator and inspect the Monitoring Dashboard, knowing the UI is backed by the same reproducible vector-retrieval and v2 answer-generation pipeline documented above.
+
 ---
 
 ## 4. Outputs
@@ -831,6 +931,24 @@ data/answers/answers_vector_v2_prompt_grounded.jsonl
 data/answers/answers_vector_v2_prompt_grounded_judged.jsonl
 ```
 
+### Monitoring tables and logs
+
+```text
+PostgreSQL conversations table
+PostgreSQL feedback table
+```
+
+These tables store conversation-level metrics (tokens, latency, cost, audience filters) and thumbs-up or thumbs-down feedback for the interactive app, and are derived from, but do not modify, the underlying corpus and evaluation artefacts.
+
+### Interactive UI
+
+```text
+app.py  (Streamlit AI Navigator and Monitoring Dashboard)
+.streamlit/config.toml
+```
+
+These files provide the optional Streamlit interface over the vector retriever and v2 prompt-grounded answer-generation path, plus a lightweight monitoring dashboard backed by the `conversations` and `feedback` tables.
+
 ---
 
 ## 5. What another person can reproduce
@@ -839,17 +957,20 @@ From a clean clone, another practitioner can:
 
 1. Create the pinned Python environment with `uv sync`.
 2. Configure a PostgreSQL database connection using `DATABASE_URL`.
-3. Either:
-   - restore the reviewed Markdown snapshot under `data/corpus_snapshots/` into `data/processed/` for strict v1 baseline reproduction, or
-   - download and extract ACSC sources and perform a new manual Markdown review for a fresh corpus rebuild.
-4. Regenerate heading-aware chunks and inspect sampled chunk records.
-5. Recreate deterministic seed-to-chunk matching.
-6. Reuse committed LLM-vetted seed and synthetic-question artefacts to reproduce the current benchmark, or regenerate them as a new evaluation-data version.
-7. Initialise and populate the PostgreSQL retrieval index.
-8. Build pgvector embeddings using the configured sentence-transformers model.
-9. Run text, vector, and hybrid retrieval over manual queries with the same audience-filter semantics.
-10. Rerun comparative retrieval evaluation over the same synthetic question set.
-11. Export per-question debug records to inspect backend-specific rankings, scores, relevance labels, and audience context.
-12. Reproduce the selected vector retrieval baseline, and also reproduce the derived answer-generation and judge stage using the preserved v1 and v2 answer artefacts and scripts.
+3. Use the committed `.streamlit/config.toml` when running the Streamlit app.
+4. Choose a corpus path:
+   - **Strict v1 baseline**: restore the reviewed Markdown snapshot under `data/corpus_snapshots/` into `data/processed/`.
+   - **Fresh corpus rebuild**: download and extract ACSC sources and perform a new manual Markdown review for a fresh corpus.
+5. Regenerate heading-aware chunks with `src/prepare_chunks.py` and inspect sampled chunk records from `data/chunks/spotcheck.*` for QA.
+6. Recreate deterministic seed-to-chunk matching and candidate files with `src/resolve_seed_draft_ids.py`.
+7. Reuse committed LLM-vetted seed and synthetic-question artefacts to reproduce the current benchmark, or regenerate them as a new evaluation-data version.
+8. Initialise and populate the PostgreSQL retrieval index by running the database bootstrap sequence (`db_init.py` → `db_load_chunks.py` → `db_build_embeddings.py`).
+9. Build pgvector embeddings using the configured sentence-transformers model if they are not already present.
+10. Run text, vector, and hybrid retrieval over manual queries with the same audience-filter semantics as described in this document.
+11. Rerun comparative retrieval evaluation over the same synthetic question set to reproduce the reported retrieval metrics.
+12. Export per-question debug records (for example, to `data/eval/retrieval_debug.jsonl`) to inspect backend-specific rankings, scores, relevance labels, and audience context.
+13. Reproduce the selected vector retrieval baseline, and rerun the derived answer-generation and judge stage using the preserved v1 and v2 answer artefacts and scripts.
+14. Start the Streamlit application after the database bootstrap sequence and interact with the AI Navigator against the same vector + v2 prompt-grounded pipeline.
+15. Reproduce the lightweight monitoring views (metrics, charts, audience breakdowns, and the recent-conversation table) driven by the `conversations` and `feedback` tables, using local demo traffic.
 
-This document intentionally stops at the evaluated retrieval baseline as the core reproducibility path. The grounded answer-generation and judge layer is a derived evaluation stage built on top of the existing retrieval artefacts, and it can be rerun separately using the preserved v1 and v2 outputs and scripts.
+This runbook intentionally treats the evaluated retrieval baseline as the core reproducible path. The grounded answer-generation and judge layer, and the interactive Streamlit UI with monitoring, are derived stages built on top of the existing retrieval artefacts and can be rerun separately using the preserved v1 and v2 outputs, scripts, `app.py`, and `.streamlit/config.toml`.

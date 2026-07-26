@@ -171,7 +171,7 @@ Add a lightweight quality check for the chunked corpus and document it as part o
 - Produced spot-check outputs for easier visual review:
   - `data/chunks/spotcheck.jsonl`
   - `data/chunks/spotcheck.json`
-- Updated `docs/reproducibility.md` to document chunk spot-checking as a QA step between chunk preparation and retrieval indexing
+- Updated `docs/runbook.md` to document chunk spot-checking as a QA step between chunk preparation and retrieval indexing
 
 ### Why
 - The corpus is small and manually curated, so a lightweight manual QA step is a practical way to verify chunk quality before investing further effort in embeddings, indexing, and evaluation
@@ -205,7 +205,7 @@ Refine audience representation to separate organisation size from AI responsibil
   - `size_audience_tag`
   - `role_audience_tags`
 - Updated `src/download_sources.py` so download metadata captures the new audience fields for provenance
-- Updated documentation (`README.md`, `docs/dataset-notes.md`, `docs/reproducibility.md`, `docs/decisions.md`) to reflect the new audience model and chunk schema
+- Updated documentation (`README.md`, `docs/dataset-notes.md`, `docs/runbook.md`, `docs/decisions.md`) to reflect the new audience model and chunk schema
 
 ### Why
 - Many documents clearly differentiate between organisations using/adopting AI and those building or providing AI systems
@@ -292,7 +292,7 @@ Generate synthetic evaluation questions from vetted seed chunks for the A → Q*
 - Wrote the generated dataset to `data/ground_truth_synthetic.jsonl`.
 - Added structured-output client helpers in `src/llm_client.py`.
 - Added a small structured-output smoke test in `src/test_structured_output.py`.
-- Updated `README.md`, `docs/reproducibility.md`, `pyproject.toml`, and `uv.lock` to reflect the new generation workflow and dependencies.
+- Updated `README.md`, `docs/runbook.md`, `pyproject.toml`, and `uv.lock` to reflect the new generation workflow and dependencies.
 
 ### Why
 - The evaluation workflow needs a stable, reproducible question set tied to gold chunks.
@@ -603,13 +603,13 @@ Preserve the manually reviewed Markdown corpus as a versioned snapshot and clear
 - Updated documentation to describe two reproducibility modes:
   - **Strict v1 baseline reproduction**: restore the snapshot into `data/processed/` and rebuild chunks, index, embeddings, and metrics.
   - **Fresh corpus rebuild**: re-run download, extraction, and manual cleanup, then create a new snapshot before rebuilding downstream artefacts.
-- Updated `docs/reproducibility.md` to:
+- Updated `docs/runbook.md` to:
   - document the snapshot directory,
   - show a non-destructive restore command,
   - clarify that `data/processed/` is a working directory and snapshots are immutable inputs.
 - Updated the top-level `README.md` to:
   - mention the snapshot in the project scope and workflow,
-  - link to `docs/reproducibility.md` as the source of truth for both modes.
+  - link to `docs/runbook.md` as the source of truth for both modes.
 
 ### Why
 - Manual Markdown cleanup is a semi-manual transformation; without a snapshot, a fresh extraction could overwrite the exact corpus used for current retrieval and evaluation.
@@ -667,3 +667,126 @@ Use the vector retriever to generate grounded answers to the synthetic question 
 - Add a small summarisation script to compute overall and slice-level good rates from the judged outputs.
 - Update the README and reproducibility notes to describe the fixed judge-v3 comparison and the v2 answer-generation selection.
 
+## 2026-07-26 — Streamlit AI Navigator UI, monitoring, and DB bootstrap sequence
+
+### Goal
+Expose the selected vector-based RAG pipeline through an interactive UI, add lightweight monitoring and user feedback, and make the database bootstrap sequence explicit so the full retrieval flow works reliably end to end.
+
+### What was done
+- Implemented a Streamlit application (`app.py`) with two tabs:
+  - **AI Navigator**: question input, organisation-size and role filters, vector retrieval, grounded answer display, and an expandable evidence panel showing retrieved chunks and metadata.
+  - **Monitoring Dashboard**: summary metrics, per-query charts, audience breakdowns, feedback counts, and a recent-conversation table for lightweight observability.
+- Wired the selected answer path into the UI:
+  - default backend: vector retrieval,
+  - configurable retrieval depth with `top_k` (default 5),
+  - context built from heading-aware chunks plus audience metadata,
+  - answer generation using the selected v2 prompt-grounded strategy.
+- Added PostgreSQL-backed monitoring tables and logging helpers:
+  - `conversations` stores question, answer, model ID, prompt/completion/total tokens, latency, estimated cost, target audience filters, and timestamp.
+  - `feedback` stores per-conversation thumbs-up / thumbs-down feedback with timestamps.
+  - the app logs each completed interaction and allows in-UI feedback submission.
+- Added lightweight in-app monitoring views:
+  - answer-level metrics for prompt tokens, completion tokens, total tokens, latency, and estimated cost,
+  - dashboard charts for response time per query, cost per query, token usage per request, conversations per hour, feedback counts, queries by organisation size, and queries by role,
+  - recent conversation table for quick inspection of recent runs.
+- Improved UI clarity for demo and evaluation use:
+  - replaced raw backend labels in filters with human-readable display labels while preserving backend-safe values,
+  - changed volume reporting to an hourly bar chart so short local demo sessions do not produce sparse or misleading time-series visuals,
+  - added clearer axis labels and units for key monitoring charts.
+- Standardised the PostgreSQL bootstrap sequence for vector retrieval:
+  - `uv run python src/db_init.py` initializes schema, extensions, and required tables,
+  - `uv run python src/db_load_chunks.py` loads chunk text and metadata into `chunks`,
+  - `uv run python src/db_build_embeddings.py` computes MiniLM embeddings and backfills `chunk_embedding`.
+- Confirmed the dependency between bootstrap steps:
+  - running only `db_init.py` and `db_load_chunks.py` leaves `chunk_embedding` as `NULL`,
+  - without embeddings, vector retrieval returns no chunks,
+  - running all three steps in sequence restores vector retrieval and grounded answering in the UI.
+- Cleaned up minor runtime issues:
+  - replaced deprecated `use_container_width` usage with `width="stretch"` where appropriate,
+  - removed an invalid Streamlit server config option to eliminate startup warnings.
+
+### Why
+- Retrieval evaluation had already identified vector retrieval as the strongest baseline, and answer evaluation had already selected the v2 prompt-grounded generation approach, so the next high-value step was exposing that chosen path through a usable end-to-end interface.
+- Adding a simple UI improves the project’s demonstration quality substantially because the full retrieval-and-answer flow can now be exercised interactively rather than only through scripts.
+- Logging conversations and feedback into PostgreSQL reuses the existing project stack and creates a practical monitoring story without introducing separate observability infrastructure.
+- Making the three-step database bootstrap sequence explicit reduces a common failure mode where schema and chunk text are loaded but embeddings are missing, which silently breaks vector retrieval.
+
+### Problems / uncertainties
+- Monitoring remains intentionally lightweight: it is useful for local evaluation and demos, but it is not a full production observability layer.
+- The current UI is designed for local use and assessment; deployment, authentication, and multi-user concerns remain out of scope for this iteration.
+- Operational logs and retrieval data currently live in the same PostgreSQL environment; a more mature version may separate application telemetry from corpus storage.
+- Cost tracking depends on model pricing coverage in `src/pricing.py`; if a model is missing there, the app records zero estimated cost and surfaces a warning.
+
+### Next step
+- Update the top-level `README.md` and `docs/runbook.md` to document:
+  - the required bootstrap order (`db_init.py` → `db_load_chunks.py` → `db_build_embeddings.py`),
+  - the Streamlit entry point and how to launch it,
+  - what the AI Navigator and Monitoring Dashboard tabs show,
+  - how conversation logging and feedback are captured.
+- Update any project narrative docs that mention monitoring or interface status so they reflect the new Streamlit UI and the current lightweight monitoring approach.
+- Consider only small, evaluation-friendly follow-up enhancements next, such as a narrowly scoped query-rewriting or reranking toggle, and only if they can be tested quickly against the existing benchmark.
+
+## 2026-07-26 — Dockerised Postgres + Streamlit app, bootstrap service, and .dockerignore/.gitignore updates
+
+### Goal
+Containerise the RAG application and its PostgreSQL/pgvector backend so reviewers can run the AI Navigator and monitoring dashboard via Docker Compose, while keeping the local `uv`-based workflow intact.
+
+### What was done
+- Added a Dockerfile for the Streamlit app:
+  - based on `python:3.13-slim`,
+  - installs dependencies via `uv sync --frozen` using `pyproject.toml` and `uv.lock`,
+  - exposes port 8501 and runs `streamlit run app.py` with headless defaults.
+- Replaced the earlier single-service Compose file with a multi-service `docker-compose.yml`:
+  - `postgres` service:
+    - uses `pgvector/pgvector:pg17`,
+    - sets `POSTGRES_DB=aus_ai_security_navigator` and `POSTGRES_USER`/`POSTGRES_PASSWORD=postgres`,
+    - exposes port 5432 and persists data in a named `postgres_data` volume,
+    - defines a health check using `pg_isready` so dependent services only start once Postgres is ready.
+  - `bootstrap` service:
+    - builds from the same image as the app,
+    - depends on `postgres` being healthy,
+    - uses the internal host `postgres` in `DATABASE_URL`,
+    - runs the three-step bootstrap sequence:
+      - `uv run python src/db_init.py`,
+      - `uv run python src/db_load_chunks.py`,
+      - `uv run python src/db_build_embeddings.py`,
+    - exits after initialising schema, loading 350 chunks, and backfilling embeddings.
+  - `app` service:
+    - builds from the same Dockerfile,
+    - depends on `postgres` being healthy,
+    - reads LLM configuration from `.env` but overrides `DATABASE_URL` to point at `postgres`,
+    - binds port 8501 on the host and mounts a `huggingface_cache` volume so the MiniLM embedding model does not re-download on every rebuild.
+- Confirmed the containerised bootstrap flow:
+  - `docker compose up -d postgres` starts the database and waits until healthy,
+  - `docker compose run --rm bootstrap`:
+    - runs `db_init.py` with `drop=False` to avoid wiping existing conversations and feedback,
+    - upserts all chunk records from `data/chunks/chunks.jsonl`,
+    - builds embeddings only for rows with `chunk_embedding IS NULL`,
+  - `docker compose up -d app` launches the Streamlit UI against the containerised database.
+- Added a `.dockerignore` to reduce build context and avoid copying local-only files into the image:
+  - excludes `.venv`, `__pycache__`, `.local`, `.streamlit`, `.env`, and raw data under `data/raw/`,
+  - keeps `pyproject.toml`, `uv.lock`, `src/`, `app.py`, `docs/`, `data/chunks/`, and `data/corpus_snapshots/` in the build context for reproducibility.
+- Updated `.gitignore` to:
+  - ignore `.venv/`, `__pycache__/`, `.env`, and other Python tool caches,
+  - keep `.env.example` committed as the sharable template for required environment variables.
+
+### Why
+- The containerisation step closes a key gap between the reproducible pipeline and a reproducible runtime environment by allowing reviewers to run the full app with a small set of Docker commands instead of setting up Postgres manually.
+- Using a dedicated `bootstrap` service separates one-time schema and corpus initialisation from the steady-state app runtime, which keeps the app container simple and avoids re-running destructive setup logic on each restart.
+- The `.dockerignore` and `.gitignore` updates reduce noise, shrink Docker build times, and minimise the risk of leaking environment files or machine-specific artefacts into the image or the repository.
+
+### Problems / uncertainties
+- The current Docker setup assumes a local development environment with direct access to the ACSC-derived chunk JSONL and does not yet handle remote deployment concerns such as TLS, authentication, or secret management.
+- The bootstrap service runs synchronously and can be slow on a cold start when the embedding model is first downloaded; for larger corpora or heavier models, this might need to be split into separate stages or managed by an orchestrator.
+- Both the app and bootstrap services share the same image; a future optimisation might split build stages to reduce final image size.
+
+### Next step
+- Add a “Docker usage” section to `README.md` (or the new `docs/runbook.md`) documenting:
+  - the first-time bootstrap sequence:
+    - `docker compose up -d postgres`,
+    - `docker compose run --rm bootstrap`,
+    - `docker compose up -d app`,
+  - the typical restart path for an already initialised database:
+    - `docker compose up -d postgres app`,
+  - the full reset path using `docker compose down -v` followed by a fresh bootstrap,
+  - any known limitations, such as the need to keep `.env` local and to update `src/pricing.py` when using new LLM models.

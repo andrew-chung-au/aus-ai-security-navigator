@@ -156,7 +156,7 @@ Fixed-size windows would be simpler to implement and easier to reuse across very
 ### Impact
 - Chunk preparation is explicitly structure-aware and anchored to document titles and `heading_path`.
 - The minimum chunk schema stays simple but supports provenance and audience-aware retrieval using both size and role metadata.
-- A small script (for example, `src/spotcheck_chunks.py`) and accompanying docs (`docs/reproducibility.md`, `docs/dataset-notes.md`) document how sampled chunks are exported and inspected as part of the reproducible workflow.
+- A small script (for example, `src/spotcheck_chunks.py`) and accompanying docs (`docs/runbook.md`, `docs/dataset-notes.md`) document how sampled chunks are exported and inspected as part of the reproducible workflow.
 - Evaluation and retrieval design can assume that chunk structure reflects ACSC guidance layout, not arbitrary windowing, which should improve grounded answer quality for audience-specific and document-specific queries.
 
 ---
@@ -525,3 +525,80 @@ The benchmark is still small, and the final comparison depends on an LLM judge r
 
 ### Notes
 The corrected comparison used a consistent judging setup after earlier testing proved unreliable. That evaluation cleanup is part of the project history, but the decision recorded here is the adoption of answer-generation v2 as the preferred project approach.
+
+## D-012 — Streamlit UI, monitoring, and DB bootstrap sequence
+Date: 2026-07-26
+Status: Accepted
+
+### Context
+The project had already selected vector retrieval as the preferred retrieval backend and the v2 prompt-grounded approach as the preferred answer-generation strategy. What was missing was a usable end-to-end interface that allowed interactive querying, visible grounding to retrieved ACSC content, and a simple way to inspect operational behavior during local demos and evaluation.
+
+A second issue was reproducibility of the vector retrieval path. Initialising the database schema and loading chunk text alone was not sufficient to make vector retrieval work, because embeddings still needed to be generated and written to `chunk_embedding`. When that final step was skipped, vector retrieval returned no chunks and the UI could not produce grounded answers.
+
+The project also needed a lightweight monitoring approach that fit the existing stack and could support rubric-facing demonstration without introducing a separate observability platform.
+
+### Decision
+Expose the selected vector-based RAG pipeline through a Streamlit UI, store conversation and feedback telemetry in PostgreSQL, and treat the three-step database bootstrap sequence as mandatory for a working system.
+
+Concretely:
+
+- Provide a Streamlit app (`app.py`) with:
+  - an **AI Navigator** tab for interactive questions, vector retrieval, grounded answers, and expandable evidence;
+  - a **Monitoring Dashboard** tab for summary metrics, per-query latency and cost charts, token usage, hourly conversation volume, feedback counts, and audience breakdowns.
+- Log interactions into PostgreSQL via:
+  - a `conversations` table for question, answer, model, audience filters, token counts, latency, cost, and timestamp;
+  - a `feedback` table for per-conversation thumbs up/down feedback and timestamp.
+- Standardise the required DB bootstrap sequence as:
+  - `uv run python src/db_init.py`
+  - `uv run python src/db_load_chunks.py`
+  - `uv run python src/db_build_embeddings.py`
+
+### Alternatives considered
+- Keep the project as script-first only, using CLI commands or notebooks instead of a dedicated UI.
+- Store conversation and feedback logs in flat files rather than PostgreSQL.
+- Leave database setup implicit and rely on ad hoc command order rather than documenting a required three-step bootstrap path.
+- Introduce a separate monitoring or observability stack instead of extending the existing PostgreSQL-based setup.
+
+### Consequences
+- The Streamlit app becomes the primary interactive entry point for demonstrating the project end to end.
+- Users and graders can issue natural-language questions, inspect grounded answers, and review retrieved evidence directly in the UI.
+- The project gains lightweight operational visibility through persisted conversation logs, feedback, and dashboard views without requiring separate infrastructure.
+- Reusing PostgreSQL keeps the architecture simple, but it also couples monitoring data to the same database environment as the retrieval corpus.
+- Vector retrieval is now explicitly dependent on completing all three bootstrap steps; this adds one more required command, but makes failures easier to diagnose and reproduce.
+- Documentation must clearly explain:
+  - how to launch the Streamlit app,
+  - how to initialise and populate the database in the required order,
+  - and how monitoring data is captured and surfaced.
+
+## D-013 — Docker Compose as the reproducible runtime path
+Date: 2026-07-26
+Status: Accepted
+
+### Context
+The project had already reached a point where the selected retrieval and answer-generation path could be demonstrated through the Streamlit UI, but the runtime setup still depended on a locally managed Python environment and an ad hoc PostgreSQL container. That made the application harder for reviewers to start consistently and left the runtime environment less reproducible than the documented data and evaluation workflow.
+
+The project also needed to improve its containerization story under the assessment rubric without forcing every offline corpus-preparation and evaluation step into the same runtime path.
+
+### Decision
+Adopt Docker Compose as the standard reproducible runtime path for the application stack.
+
+Concretely:
+
+- run PostgreSQL with pgvector in a Compose-managed `postgres` service,
+- run the Streamlit UI in a Compose-managed `app` service,
+- use a separate one-off `bootstrap` service to initialise schema, load chunks, and build embeddings,
+- keep the existing local `uv` workflow available for offline pipeline work such as download, extraction, corpus review, and evaluation.
+
+### Alternatives considered
+- Keep PostgreSQL and the Streamlit app as local-only processes with a documented `uv` workflow.
+- Use Docker only for PostgreSQL and run the app outside containers.
+- Attempt to containerise the full end-to-end offline pipeline and online app in one unified runtime path immediately.
+
+### Consequences
+- Reviewers can launch the core application stack with a small set of Docker Compose commands instead of manually setting up Postgres and the Python runtime.
+- The project now has a clear containerized path for the end-to-end interactive system, improving both reproducibility and the containerization story.
+- The `bootstrap` step makes the required DB initialisation order explicit, but also adds a one-time startup command for fresh environments.
+- The offline pipeline remains partly outside Docker for now, which keeps the project simpler while preserving the existing `uv`-based development workflow.
+
+### Notes
+This decision applies to the runtime path used to launch and demonstrate the application. It does not mean every corpus-preparation or evaluation step must run inside Docker at this stage.
