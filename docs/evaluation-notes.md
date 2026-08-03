@@ -4,6 +4,17 @@ This document records how retrieval and answer-generation are evaluated in the p
 
 ---
 
+## Assessment summary
+
+- **Retrieval approaches evaluated:** text, vector, reranked vector, and hybrid.
+- **Selected retrieval approach:** reranked vector, based on the current 27-question synthetic benchmark.
+- **Answer-generation approaches evaluated:** baseline and v2 prompt-grounded variants, with LLM-as-a-judge evaluation.
+- **Selected RAG path:** reranked-vector retrieval plus v2 prompt-grounded answers.
+- **Experimental feature:** query rewriting was evaluated across retrieval backends but was not selected for the default path.
+- **Live implementation:** [http://54.167.24.156:8501/](http://54.167.24.156:8501/)
+
+---
+
 ## 1. Evaluation goals
 
 The evaluation setup is designed to answer three main questions:
