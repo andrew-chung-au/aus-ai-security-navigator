@@ -842,3 +842,50 @@ Improve retrieval quality beyond the vector baseline by adding a lightweight cro
 - Update retrieval and evaluation documentation so the default path is described as vector retrieval followed by cross-encoder reranking.
 - Keep text, vector, and hybrid retrieval available as baselines for comparison and debugging.
 - If answer-generation is regenerated in the future, use the reranked retrieval path there as well.
+
+## 2026-08-03 — Query rewriting evaluated and rejected as default
+
+### Goal
+Test whether LLM-based query rewriting improves retrieval quality over the existing retrieval backends, especially the new reranked vector default.
+
+### What was done
+- Added a shared query rewrite helper in `src/rewrite_query.py`.
+- Implemented a single-query LLM rewrite step using `llm_text(...)` with instructions to:
+  - preserve the original intent,
+  - keep audience constraints such as organisation size and AI role,
+  - expand vague wording into ACSC-style terminology,
+  - remove filler language,
+  - fix obvious spelling issues,
+  - return one retrieval-friendly query only.
+- Updated retrieval experiments to test both original and rewritten variants for:
+  - `text`
+  - `vector`
+  - `vector_reranked`
+  - `hybrid`
+- Ran the retrieval benchmark over the frozen 27-question synthetic set and compared strict and relaxed metrics for each backend with and without rewrite.
+
+### Findings
+- Query rewriting did **not** improve retrieval on this corpus.
+- The strongest overall backend remains `vector_reranked` without rewrite.
+- Rewritten variants generally performed worse or only marginally differently than their non-rewritten counterparts:
+  - `text_rewritten` underperformed `text`,
+  - `vector_rewritten` slightly improved relaxed MRR but reduced strict Hit@5 and strict MRR,
+  - `vector_reranked_rewritten` performed worse than `vector_reranked` on strict MRR and relaxed metrics,
+  - `hybrid_rewritten` underperformed `hybrid`.
+- The clearest result is that the benchmark corpus is already well matched by semantic retrieval, and prompt-only rewriting introduces enough drift to hurt precision and exact passage ranking.
+
+### Why
+- The synthetic benchmark is strongly seed-anchored and already uses audience-aware retrieval filters, so the vector reranker has enough signal without rewriting.
+- Query rewriting can help when user questions are vague or conversational, but it can also shift wording away from the corpus language and reduce lexical alignment.
+- On this benchmark, that drift appears to outweigh any benefits from clarification or expansion.
+
+### Problems / uncertainties
+- The benchmark is small, so these results should be treated as project-level evidence rather than a universal rule.
+- Query rewriting may still be useful as a selective fallback for vague or underspecified user queries.
+- A future gated rewrite strategy could still be worth testing, but only if it is restricted to queries that clearly need reformulation.
+
+### Next step
+- Keep `vector_reranked` as the default retrieval path.
+- Keep `src/rewrite_query.py` and rewritten retrieval variants as experimental tools, not defaults.
+- Update the evaluation notes, runbook, and README so they clearly state that query rewriting was tested but did not improve the frozen benchmark.
+- If rewriting is revisited later, evaluate a gated or selective rewrite strategy rather than enabling it for all queries.

@@ -74,7 +74,7 @@ This document tracks the current state of the project against a set of evaluatio
 
 - **Poor**: No instructions on how to run the code, the data is missing, or it’s unclear how to access it.
 - **OK**: Some instructions are provided but are incomplete, OR instructions are clear and complete, the code works, but the data is missing.
-- **Good**: Instructions are clear, the dataset is accessible, it’s easy to run the code, and it works. The versions for all dependencies are specified.
+- **Good**: Instructions are clear, the dataset is accessible, it’s easy to run the code, and the versions for all dependencies are specified.
 
 ---
 
@@ -104,7 +104,7 @@ This table is a snapshot as of 2026-08-03 and is intended to be updated as the p
 | Reproducibility | Good | Clear instructions, accessible dataset, pinned dependencies, committed Docker config, and a committed Streamlit config. |
 | Hybrid search | Good | Implemented and evaluated via reciprocal rank fusion; improves over text but not over reranked vector on the current benchmark. |
 | Document reranking | Good | Implemented via `src/retrieve_reranked.py` and now the preferred retrieval baseline. |
-| Query rewriting | — | No explicit query rewrite step yet. |
+| Query rewriting | OK | Implemented and evaluated, but not adopted as the default because it did not improve the frozen benchmark. |
 | Cloud deployment | — | No deployment; local development only. |
 
 ---
@@ -181,7 +181,7 @@ Evidence is in `docs/runbook.md`, `README.md`, `pyproject.toml`, `uv.lock`, `Doc
 
 ---
 
-## Bonus categories and extras — current notes
+## Bonus categories and extras
 
 These categories are not part of any formal score here, but they are useful indicators of project maturity and future learning opportunities.
 
@@ -197,7 +197,7 @@ Document or chunk reranking is now present. The current system includes `src/ret
 
 ### User query rewriting
 
-There is no explicit query rewriting layer. Queries are currently sent to retrievers as-is. A rewriting step might be useful later for messy user queries once the end-to-end flow is in place.
+Query rewriting is implemented and evaluated, but it is not the default because it did not improve the frozen benchmark. The rewrite helper remains useful as an experimental tool, especially if future work explores gated rewriting for vague user questions.
 
 ### Deployment to the cloud
 
@@ -224,8 +224,9 @@ Additional notable features now include a containerised local runtime with a ded
 
 **Clear gaps and next areas to improve:**
 
-- Ingestion pipeline orchestration (still OK rather than Good)
-- Bonus implementation categories beyond hybrid search and reranking (query rewriting, cloud deployment) are not yet implemented
+- Ingestion pipeline orchestration is still OK rather than Good
+- Query rewriting is implemented but intentionally not adopted as default
+- Cloud deployment is still absent
 - Docker usage and reset paths should remain clearly documented so a reviewer can follow them without guesswork
 
 ---
@@ -235,7 +236,7 @@ Additional notable features now include a containerised local runtime with a ded
 These priorities are chosen to improve project quality, maintainability, and learning value rather than to maximise any external score.
 
 - **Ingestion pipeline maturity**: Consider a lightweight orchestrator or single entry script that sequences the main ingestion and evaluation steps for easier reuse.
-- **Targeted retrieval enhancements**: Explore small, evaluation-friendly changes such as query rewriting or additional reranking experiments, evaluated against the existing synthetic benchmark.
+- **Targeted retrieval enhancements**: Explore small, evaluation-friendly changes such as gated query rewriting or additional reranking experiments, evaluated against the existing synthetic benchmark.
 - **Optional deployment**: If time permits, explore a minimal cloud deployment of the Streamlit app as a bonus, without overcomplicating the core project.
 - **Container refinement**: Keep Docker usage clearly documented in `README.md` and `docs/runbook.md`, including first-time bootstrap, normal restart, and full reset paths.
 

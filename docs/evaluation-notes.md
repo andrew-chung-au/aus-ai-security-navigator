@@ -39,13 +39,13 @@ Retrieval evaluation is based on a synthetic benchmark built in three stages:
     - `question_id`, `question`
     - `source_id`, `chunk_id`
     - `size_audience_tag`, `role_audience_tags`
-    - `target_size`, `target_role`.
+    - `target_size`, `target_role`
 
 This benchmark is small (currently 27 questions) and intentionally seed-anchored. It is primarily a tool for comparative evaluation and debugging, not a full coverage measure of ACSC guidance.
 
 ### 2.2 Retrieval methods
 
-Four retrieval methods are evaluated over the same benchmark:
+Five retrieval methods are evaluated over the same benchmark, including rewritten variants for comparison:
 
 - **Text (lexical)** — `src/retrieve_text.py`:
   - uses PostgreSQL full-text search (`fts` over `search_text`),
@@ -74,11 +74,16 @@ Four retrieval methods are evaluated over the same benchmark:
   - fuses results per `chunk_id` using reciprocal rank fusion (RRF) to produce a `hybrid_score`,
   - preserves backend-specific debug fields (`text_rank`, `vector_rank`, `text_score`, `vector_similarity`).
 
+- **Query rewriting variants** — `src/rewrite_query.py` plus evaluator wrappers:
+  - the same four retrievers are also tested with a rewritten query,
+  - the rewrite is a single LLM-generated retrieval query,
+  - rewritten runs are tracked separately as `text_rewritten`, `vector_rewritten`, `vector_reranked_rewritten`, and `hybrid_rewritten`.
+
 All methods operate over the same chunk corpus (`data/chunks/chunks.jsonl`) and audience metadata.
 
 ### 2.3 Metrics
 
-Retrieval evaluation is implemented in `src/evaluate_retrieval.py`. For each backend (text, vector, vector_reranked, hybrid), it computes:
+Retrieval evaluation is implemented in `src/evaluate_retrieval.py`. For each backend, it computes:
 
 - **Strict metrics**:
   - Hit@k: whether the exact gold `chunk_id` appears in the top-k results.
@@ -96,7 +101,8 @@ An optional `--debug-output` parameter writes per-question, per-backend debug re
 - question and audience fields,
 - gold labels (source and chunk),
 - strict/relaxed relevance flags per rank,
-- backend-specific scores and ranks.
+- backend-specific scores and ranks,
+- original and rewritten retrieval queries where applicable.
 
 ### 2.4 Findings
 
@@ -105,6 +111,7 @@ On the current 27-question synthetic benchmark:
 - **Text retrieval**:
   - After loosening the full-text condition to “rank then filter on `score > 0`”, strict Hit@k and MRR are non-zero.
   - However, text retrieval still struggles with long, conversational questions and nuanced AI-security phrasing.
+  - Rewriting does not improve text retrieval on this benchmark and reduces both strict and relaxed scores.
 
 - **Vector retrieval**:
   - Strict Hit@k and MRR are substantially higher than for text.
@@ -112,18 +119,26 @@ On the current 27-question synthetic benchmark:
     - paraphrased security questions,
     - questions about risk/mitigation combinations,
     - questions using more natural, less keyword-driven language.
+  - Rewriting is slightly mixed here: strict metrics fall a little, while relaxed MRR improves slightly, but the overall win is not strong enough to make rewrite the default.
 
 - **Vector reranked retrieval**:
   - Vector reranking is the current best-performing retrieval strategy on this benchmark.
   - It improves both strict and relaxed metrics over vector-only retrieval.
   - The reranker is especially helpful when vector search finds the right topic but does not place the most exact passage at rank 1.
+  - Rewriting makes this method worse on strict MRR and worse on relaxed metrics, so the rewritten variant is not preferred.
 
 - **Hybrid retrieval**:
   - Hybrid (RRF) improves clearly over text-only.
   - On this benchmark, hybrid does **not** outperform vector-only or vector-reranked retrieval.
   - In some cases it pulls in useful lexical hits; in others it slightly dilutes strong vector rankings.
+  - Rewriting also hurts hybrid performance on this benchmark.
 
-Given this evidence, the project treats **vector-reranked retrieval** as the current default backend for both evaluation and the interactive application. Text, vector, and hybrid retrieval remain available as evaluated baselines and debugging tools.
+- **Query rewriting overall**:
+  - The rewritten variants are consistently weaker than the non-rewritten best backend.
+  - The strongest observed backend remains `vector_reranked` without rewrite.
+  - This suggests the benchmark corpus is already well matched by semantic retrieval, and prompt-only rewriting introduces enough drift to reduce lexical alignment and precision.
+
+Given this evidence, the project treats **vector-reranked retrieval without query rewriting** as the current default backend for both evaluation and the interactive application. Text, vector, hybrid, and rewritten variants remain available as evaluated baselines and debugging tools.
 
 ---
 
@@ -225,8 +240,7 @@ The benchmark is still small and relies on an LLM judge rather than human labels
 Based on these results:
 
 - `src/generate_answers.py` (v2 prompt-grounded) is the **default answer-generation script**.
-- `data/answers/answers_vector_v2_prompt_grounded.jsonl` and  
-  `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` are the **primary** answer and judged-answer artefacts.
+- `data/answers/answers_vector_v2_prompt_grounded.jsonl` and `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` are the **primary** answer and judged-answer artefacts.
 - `src/generate_answers_v1.py` and the v1 JSONL files are retained for provenance and comparison, but not used as the default.
 
 ---

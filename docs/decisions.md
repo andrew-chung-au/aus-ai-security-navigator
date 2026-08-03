@@ -635,3 +635,57 @@ Reranking adds some latency relative to plain vector retrieval, but the quality 
 - `src/evaluate_retrieval.py` should treat `vector_reranked` as the main retrieval backend for comparison and reporting.
 - Documentation should describe the default path as vector search plus cross-encoder reranking.
 - If answer generation is regenerated later, it should use reranked retrieval rather than plain vector retrieval.
+
+## D-015 — Query rewriting evaluated but not adopted as the default retrieval path
+Date: 2026-08-03  
+Status: Accepted
+
+
+### Context
+After adding the cross-encoder reranker as the default retrieval path, the project tested whether a lightweight LLM-based query rewrite step would further improve retrieval quality across the existing backends. The rewrite experiment was implemented as a single-query prompt that preserves audience constraints, expands vague wording, and fixes obvious spelling issues before retrieval.
+
+
+### Decision
+Do **not** adopt query rewriting as the default retrieval step for the project.
+
+
+Concretely:
+
+
+- keep `src/rewrite_query.py` as a reusable experimental helper,
+- allow rewritten retrieval variants to remain available for comparison,
+- but do not route the main retrieval path through query rewriting by default,
+- keep `vector_reranked` as the preferred retrieval backend.
+
+
+### Reason
+On the frozen 27-question synthetic benchmark, rewriting did not improve retrieval overall. The strongest backend remained `vector_reranked` without rewrite, while the rewritten variants were weaker or only marginally different:
+
+
+- `text_rewritten` underperformed `text`,
+- `vector_rewritten` slightly improved relaxed MRR but reduced strict Hit@5 and strict MRR,
+- `vector_reranked_rewritten` performed worse than `vector_reranked` on strict MRR and relaxed metrics,
+- `hybrid_rewritten` underperformed `hybrid`.
+
+
+The result suggests that the benchmark corpus is already well aligned with semantic retrieval, and prompt-only rewriting introduces enough vocabulary drift to hurt precision and exact passage ranking.
+
+### Alternatives considered
+- Make query rewriting the default pre-retrieval step.
+- Apply rewriting only to specific query classes, such as vague or conversational questions.
+- Use multi-query rewrite fusion or a decomposition strategy instead of single-query rewrite.
+- Remove the rewrite code entirely after the benchmark result.
+
+
+### Trade-offs
+Keeping the rewrite helper but not adopting it as the default preserves an experimental path for later work without adding latency or complexity to the main retrieval pipeline.
+
+
+The main downside is that some vague user queries may still benefit from rewriting in future experiments, but the current evidence does not justify making it part of the standard path.
+
+
+### Impact
+- The default retrieval path remains vector retrieval followed by cross-encoder reranking.
+- Query rewriting is documented as an evaluated experiment that did not improve the frozen benchmark.
+- `src/rewrite_query.py` remains available for selective or future experimental use.
+- Evaluation notes and project logs should record that rewritten retrieval variants were compared but not selected as the default.

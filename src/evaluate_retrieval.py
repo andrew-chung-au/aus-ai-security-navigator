@@ -10,6 +10,7 @@ from retrieve_hybrid import retrieve_chunks_hybrid
 from retrieve_reranked import retrieve_chunks_reranked
 from retrieve_text import retrieve_chunks
 from retrieve_vector import retrieve_chunks_vector
+from rewrite_query import rewrite_query
 
 
 GROUND_TRUTH_PATH = Path("data/ground_truth_synthetic.jsonl")
@@ -28,29 +29,49 @@ RETRIEVERS: dict[str, dict[str, Any]] = {
     "text": {
         "fn": retrieve_chunks,
         "top_k_param": "limit",
-        "score_field": "score",
+        "rewrite": False,
+    },
+    "text_rewritten": {
+        "fn": retrieve_chunks,
+        "top_k_param": "limit",
+        "rewrite": True,
     },
     "vector": {
         "fn": retrieve_chunks_vector,
         "top_k_param": "k",
-        "score_field": "similarity",
+        "rewrite": False,
+    },
+    "vector_rewritten": {
+        "fn": retrieve_chunks_vector,
+        "top_k_param": "k",
+        "rewrite": True,
     },
     "vector_reranked": {
         "fn": retrieve_chunks_reranked,
         "top_k_param": "limit",
-        "score_field": "reranker_score",
+        "rewrite": False,
+    },
+    "vector_reranked_rewritten": {
+        "fn": retrieve_chunks_reranked,
+        "top_k_param": "limit",
+        "rewrite": True,
     },
     "hybrid": {
         "fn": retrieve_chunks_hybrid,
         "top_k_param": "limit",
-        "score_field": "hybrid_score",
+        "rewrite": False,
+    },
+    "hybrid_rewritten": {
+        "fn": retrieve_chunks_hybrid,
+        "top_k_param": "limit",
+        "rewrite": True,
     },
 }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate text, vector, vector-reranked, and hybrid retrieval on the synthetic ground-truth set."
+        description="Evaluate text, vector, reranked, and hybrid retrieval with and without query rewriting."
     )
     parser.add_argument(
         "--ground-truth",
@@ -99,19 +120,44 @@ def call_backend(
     top_k: int,
     target_size: str | None,
     target_role: str | None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], str, dict[str, Any] | None]:
     backend = RETRIEVERS[backend_name]
     fn: RetrieverFn = backend["fn"]
     top_k_param = backend["top_k_param"]
+    should_rewrite = backend["rewrite"]
+
+    retrieval_query = question
+    rewrite_usage: dict[str, Any] | None = None
+
+    if should_rewrite:
+        rewritten_query, usage = rewrite_query(question)
+        retrieval_query = rewritten_query.strip() or question
+        if usage is not None:
+            rewrite_usage = {
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "total_tokens": getattr(usage, "total_tokens", None),
+            }
 
     kwargs: dict[str, Any] = {
-        "query": question,
+        "query": retrieval_query,
         "size_tag": target_size,
         "role_tag": target_role,
         top_k_param: top_k,
     }
 
-    return fn(**kwargs)
+    results = fn(**kwargs)
+
+    annotated_results: list[dict[str, Any]] = []
+    for row in results:
+        item = dict(row)
+        item["original_query"] = question
+        item["retrieval_query"] = retrieval_query
+        item["rewrite_used"] = should_rewrite
+        item["rewrite_usage"] = rewrite_usage
+        annotated_results.append(item)
+
+    return annotated_results, retrieval_query, rewrite_usage
 
 
 def compute_relevance_exact(
@@ -121,8 +167,8 @@ def compute_relevance_exact(
     target_size: str | None,
     target_role: str | None,
     limit: int = TOP_K_STRICT,
-) -> tuple[list[int], list[dict[str, Any]]]:
-    results = call_backend(
+) -> tuple[list[int], list[dict[str, Any]], str, dict[str, Any] | None]:
+    results, retrieval_query, rewrite_usage = call_backend(
         backend_name=backend_name,
         question=question,
         top_k=limit,
@@ -130,7 +176,7 @@ def compute_relevance_exact(
         target_role=target_role,
     )
     scores = [1 if row["chunk_id"] == gold_chunk_id else 0 for row in results]
-    return scores, results
+    return scores, results, retrieval_query, rewrite_usage
 
 
 def compute_relevance_relaxed(
@@ -142,8 +188,8 @@ def compute_relevance_relaxed(
     target_size: str | None,
     target_role: str | None,
     limit: int = TOP_K_RELAXED,
-) -> tuple[list[int], list[dict[str, Any]]]:
-    results = call_backend(
+) -> tuple[list[int], list[dict[str, Any]], str, dict[str, Any] | None]:
+    results, retrieval_query, rewrite_usage = call_backend(
         backend_name=backend_name,
         question=question,
         top_k=limit,
@@ -171,7 +217,7 @@ def compute_relevance_relaxed(
         else:
             scores.append(0)
 
-    return scores, results
+    return scores, results, retrieval_query, rewrite_usage
 
 
 def hit_rate_binary(relevance_scores: list[list[int]], positive_values: set[int]) -> float:
@@ -197,7 +243,8 @@ def mrr_from_binary(relevance_scores: list[list[int]], positive_values: set[int]
 
 
 def build_debug_result_rows(
-    results: list[dict[str, Any]], backend_name: str
+    results: list[dict[str, Any]],
+    backend_name: str,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
@@ -211,19 +258,23 @@ def build_debug_result_rows(
             "size_audience_tag": row.get("size_audience_tag"),
             "role_audience_tags": row.get("role_audience_tags"),
             "chunk_words": row.get("chunk_words"),
+            "original_query": row.get("original_query"),
+            "retrieval_query": row.get("retrieval_query"),
+            "rewrite_used": row.get("rewrite_used"),
+            "rewrite_usage": row.get("rewrite_usage"),
         }
 
-        if backend_name == "text":
+        if backend_name.startswith("text"):
             item["score"] = row.get("score")
-        elif backend_name == "vector":
-            item["similarity"] = row.get("similarity")
-            item["cosine_distance"] = row.get("cosine_distance")
-        elif backend_name == "vector_reranked":
+        elif backend_name.startswith("vector_reranked"):
             item["reranker_score"] = row.get("reranker_score")
             item["vector_rank"] = row.get("vector_rank")
             item["vector_similarity"] = row.get("vector_similarity")
             item["vector_cosine_distance"] = row.get("vector_cosine_distance")
-        elif backend_name == "hybrid":
+        elif backend_name.startswith("vector"):
+            item["similarity"] = row.get("similarity")
+            item["cosine_distance"] = row.get("cosine_distance")
+        elif backend_name.startswith("hybrid"):
             item["hybrid_score"] = row.get("hybrid_score")
             item["text_rank"] = row.get("text_rank")
             item["vector_rank"] = row.get("vector_rank")
@@ -255,7 +306,7 @@ def evaluate_with_backend(
         target_size = record.get("target_size")
         target_role = record.get("target_role")
 
-        strict, strict_results = compute_relevance_exact(
+        strict, strict_results, strict_query, strict_usage = compute_relevance_exact(
             backend_name=backend_name,
             question=question,
             gold_chunk_id=gold_chunk_id,
@@ -263,7 +314,7 @@ def evaluate_with_backend(
             target_role=target_role,
             limit=TOP_K_STRICT,
         )
-        relaxed, relaxed_results = compute_relevance_relaxed(
+        relaxed, relaxed_results, relaxed_query, relaxed_usage = compute_relevance_relaxed(
             backend_name=backend_name,
             question=question,
             gold_chunk_id=gold_chunk_id,
@@ -288,6 +339,10 @@ def evaluate_with_backend(
                 "gold_leaf_heading": gold_leaf,
                 "strict_top_k": TOP_K_STRICT,
                 "relaxed_top_k": TOP_K_RELAXED,
+                "strict_query": strict_query,
+                "relaxed_query": relaxed_query,
+                "strict_rewrite_usage": strict_usage,
+                "relaxed_rewrite_usage": relaxed_usage,
                 "strict_relevance_scores": strict,
                 "relaxed_relevance_scores": relaxed,
                 "strict_results": build_debug_result_rows(strict_results, backend_name),
@@ -299,6 +354,7 @@ def evaluate_with_backend(
         "n_questions": len(ground_truth),
         "strict_top_k": TOP_K_STRICT,
         "relaxed_top_k": TOP_K_RELAXED,
+        "rewrite_enabled": RETRIEVERS[backend_name]["rewrite"],
         "strict_hit_rate": hit_rate_binary(strict_scores, positive_values={1}),
         "strict_mrr": mrr_from_binary(strict_scores, positive_values={1}),
         "relaxed_hit_rate_any": hit_rate_binary(relaxed_scores, positive_values={1, 2}),
@@ -325,7 +381,7 @@ def debug_top_k(ground_truth: list[dict], backend_name: str) -> None:
         target_size = record.get("target_size")
         target_role = record.get("target_role")
 
-        results = call_backend(
+        results, retrieval_query, _ = call_backend(
             backend_name=backend_name,
             question=question,
             top_k=DEBUG_TOP_K,
@@ -335,6 +391,7 @@ def debug_top_k(ground_truth: list[dict], backend_name: str) -> None:
 
         print(f"\n=== DEBUG QUESTION {i} ({backend_name}) ===")
         print("Q:", question)
+        print("Retrieval query:", retrieval_query)
         print("GOLD chunk_id:", gold_chunk_id)
         print("GOLD source_id:", gold_source_id)
         print("GOLD leaf heading:", gold_leaf)
@@ -346,15 +403,11 @@ def debug_top_k(ground_truth: list[dict], backend_name: str) -> None:
         for rank, row in enumerate(results, start=1):
             row_leaf = last_heading(row.get("heading_path"))
 
-            if backend_name == "text":
+            if backend_name.startswith("text"):
                 score = row.get("score")
                 score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "n/a"
                 extra = f"score={score_str}"
-            elif backend_name == "vector":
-                score = row.get("similarity")
-                score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "n/a"
-                extra = f"similarity={score_str}"
-            elif backend_name == "vector_reranked":
+            elif backend_name.startswith("vector_reranked"):
                 reranker_score = row.get("reranker_score")
                 reranker_score_str = (
                     f"{reranker_score:.4f}"
@@ -372,6 +425,10 @@ def debug_top_k(ground_truth: list[dict], backend_name: str) -> None:
                     f"vector_rank={row.get('vector_rank')} "
                     f"vector_similarity={vector_similarity_str}"
                 )
+            elif backend_name.startswith("vector"):
+                score = row.get("similarity")
+                score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "n/a"
+                extra = f"similarity={score_str}"
             else:
                 hybrid_score = row.get("hybrid_score")
                 hybrid_score_str = (

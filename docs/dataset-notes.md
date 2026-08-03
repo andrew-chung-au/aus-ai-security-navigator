@@ -1,6 +1,6 @@
 # Dataset notes
 
-This document is a **living snapshot** of the project’s dataset and how it is currently structured, chunked, and used for retrieval and evaluation. It is not a changelog: whenever the corpus, schema, or retrieval approach changes, this file should be updated in place so that it always describes the latest state a new practitioner will see from a fresh clone.
+This document is a **living snapshot** of the project’s dataset and how it is currently structured, chunked, and used for retrieval and evaluation. It is not a changelog: whenever the corpus, schema, retrieval approach, or evaluation defaults change, this file should be updated in place so that it always describes the latest state a new practitioner will see from a fresh clone.
 
 ---
 
@@ -27,7 +27,7 @@ These core sources are defined in `data/source_manifest_core.csv`. The manifest 
 - `size_audience_tag` (for example `small_business`, `medium_business`, `large_enterprise_gov_critical`, `all_sizes`)
 - `role_audience_tags` (for example `ai_consumer`, `ai_builder`, or both)
 
-These fields are propagated into the retrieval corpus so each chunk carries both organisation size and role context. The same audience information underpins seed selection, synthetic question generation, and retrieval evaluation.
+These fields are propagated into the retrieval corpus so each chunk carries both organisation size and role context. The same audience information underpins seed selection, synthetic question generation, retrieval evaluation, and answer-generation comparisons.
 
 ---
 
@@ -41,7 +41,7 @@ The following sources are retained for possible later expansion, but excluded fr
 - AI primer
 - AI in OT principles
 
-Operational technology (OT) guidance is excluded because it broadens the project into OT and critical infrastructure environments beyond the initial scope. Keeping OT and broader cyber guidance out of v1 helps maintain a focused AI security navigator for organisational and AI-system audiences.
+Operational technology guidance is excluded because it broadens the project into OT and critical infrastructure environments beyond the initial scope. Keeping OT and broader cyber guidance out of v1 helps maintain a focused AI security navigator for organisational and AI-system audiences.
 
 ---
 
@@ -66,7 +66,7 @@ Typical corrections include:
 - PDF reading-order issues
 - other extraction noise that could harm retrieval
 
-The reviewed Markdown files form the cleaned corpus used for chunking, database loading, retrieval, and evaluation. This is a one-time quality pass for the small curated corpus rather than an ongoing editorial process.
+The reviewed Markdown files form the cleaned corpus used for chunking, database loading, retrieval, evaluation, and answer generation. This is a one-time quality pass for the small curated corpus rather than an ongoing editorial process.
 
 ### Reviewed corpus snapshot
 
@@ -76,7 +76,7 @@ Because manual review is a semi-manual transformation, the project preserves the
 
 This directory contains:
 
-- the reviewed Markdown files (e.g. `ai-small-business.md`, `ai-data-security.md`, `agentic-ai-adoption.md`, etc.)
+- the reviewed Markdown files
 - `manifest.csv` — the source manifest associated with this snapshot
 - `checksums.sha256` — file checksums for verification
 
@@ -87,7 +87,7 @@ mkdir -p data/processed
 cp -iv data/corpus_snapshots/v1_2026-07-25/*.md data/processed/
 ```
 
-Then continue from chunk preparation and downstream steps. The `data/processed/` directory remains the overwriteable working location for fresh extraction and manual cleanup; snapshots are treated as immutable inputs. If the corpus is updated later (for example, new ACSC guidance or revised manual cleanup), a new dated snapshot should be created and this document updated accordingly.
+Then continue from chunk preparation and downstream steps. The `data/processed/` directory remains the overwriteable working location for fresh extraction and manual cleanup; snapshots are treated as immutable inputs. If the corpus is updated later, a new dated snapshot should be created and this document updated accordingly.
 
 ---
 
@@ -121,7 +121,7 @@ Each line in `data/chunks/chunks.jsonl` represents one chunk as a JSON object. T
 
 The minimum chunk schema is:
 
-- `chunk_id` – a stable identifier for the chunk (for example `source_id::index`)
+- `chunk_id` – a stable identifier for the chunk, typically `source_id::index`
 - `source_id` – the logical source identifier, aligned with the manifest
 - `source_file` – the cleaned Markdown filename for the source document
 - `chunk_index` – an integer index reflecting document order
@@ -154,7 +154,7 @@ This approach is intended to:
 - Chunks are anchored to the document title and `heading_path`.
 - Headings are not stored as standalone chunks; they are attached to the content beneath them.
 - Where useful for retrieval, the heading breadcrumb may be included in a separate `search_text` field before indexing.
-- Very large sections may be split further when structure provides a natural boundary (e.g. long lists, multi-page tables, or very dense guidance blocks).
+- Very large sections may be split further when structure provides a natural boundary, for example long lists, multi-page tables, or very dense guidance blocks.
 
 ### Enumerated sections
 
@@ -185,7 +185,7 @@ Examples include:
 - `engaging-with-ai.md` – threat or risk sections paired with case studies or response guidance
 - `agentic-ai-adoption.md` – security domains paired with scenario examples and recommended best practices
 
-Keeping these pairings intact improves retrieval and answer grounding for evaluation questions that ask both “what is the risk?” and “what should we do about it?”.
+Keeping these pairings intact improves retrieval and answer grounding for evaluation questions that ask both “what is the risk?” and “what should we do about it?”
 
 ### Tables
 
@@ -213,7 +213,7 @@ Some source documents have recurring structures that the chunking process preser
 
 ### AI-enabled cyber attack PDF guides
 
-These guides are audience-segmented (small business, medium-sized business, and government / critical infrastructure / large enterprise) and are mostly structured as a document title plus time- or action-based sections (e.g. immediate, medium-term, longer-term actions). Each major section generally stays intact with its associated action bullets so that evaluation questions about “what should a medium-sized business do immediately?” map cleanly to a single chunk.
+These guides are audience-segmented and are mostly structured as a document title plus time- or action-based sections. Each major section generally stays intact with its associated action bullets so that evaluation questions about “what should a medium-sized business do immediately?” map cleanly to a single chunk.
 
 ### Guidelines for secure AI system development
 
@@ -301,7 +301,7 @@ Batch generation includes retry handling and a fixed delay between successful re
 
 ---
 
-## Retrieval and evaluation (current setup)
+## Retrieval and evaluation
 
 The dataset is exercised via a PostgreSQL-backed retrieval layer over the `chunks` table and an evaluation harness that computes metrics on the synthetic question set.
 
@@ -309,59 +309,39 @@ The dataset is exercised via a PostgreSQL-backed retrieval layer over the `chunk
 
 The baseline text retrieval helper (`src/retrieve_text.py`):
 
-- uses PostgreSQL full-text search to compute a relevance score for chunks via  
+- uses PostgreSQL full-text search to compute a relevance score for chunks via
   `ts_rank(fts, websearch_to_tsquery('english', query), 1)`
-- filters results on `score > 0` rather than requiring a strict boolean match on  
+- filters results on `score > 0` rather than requiring a strict boolean match on
   `fts @@ websearch_to_tsquery('english', query)`
 - preserves optional audience filters on:
   - `size_audience_tag` (with `all_sizes` as a fallback), and
   - `role_audience_tags` (JSONB array containment)
-- returns the top‑k chunks (default `k=5`, configurable) ordered by score, with a secondary sort on `chunk_words` for tie-breaking
+- returns the top‑k chunks, default `k=5` and configurable, ordered by score with secondary tie-breaking for reproducibility
 
 This refactor was motivated by the observation that long, conversational questions rarely satisfied a strict boolean full-text condition, leading to empty result sets even when relevant guidance existed. Ranking first and filtering on positive scores produces a more practical lexical baseline for the current corpus.
 
-### Evaluation harness
-
-Using the synthetic ground-truth questions in `data/ground_truth_synthetic.jsonl` and the chunk corpus:
-
-- strict metrics (exact `chunk_id` match within top‑k) report non-zero Hit@k and MRR values, indicating that some gold chunks appear early in the ranked list
-- relaxed metrics (exact or same-heading match within a larger top‑k) report higher hit rates and MRR, reflecting cases where retrieval reaches the correct document and section even when the exact gold chunk is not ranked first
-
-A debug mode in `src/evaluate_retrieval.py` prints top‑k results per question (including `chunk_id`, `source_id`, leaf heading, and score), confirming that:
-
-- the chunked dataset and audience metadata are being used correctly in retrieval
-- the primary remaining gaps are in lexical ranking rather than in corpus structure or schema
-
-These retrieval and evaluation behaviours do not alter the dataset itself:
-
-- core and boundary sources and audience metadata in `data/source_manifest_core.csv` remain unchanged
-- the retrieval-ready corpus in `data/chunks/chunks.jsonl` retains the same minimal schema and structure-aware chunking
-- the seed manifest, vetted seeds, and synthetic question dataset continue to rely on `chunk_id`, `heading_path`, `size_audience_tag`, and `role_audience_tags`
-
-This document therefore continues to describe the dataset and its structure; retrieval and evaluation changes are reflected here only insofar as they explain how the existing corpus is currently searched and assessed.
-
-### Vector retrieval and reranking evaluation
+### Vector retrieval and reranking
 
 The retrieval-ready corpus in `data/chunks/chunks.jsonl` is also used to build a dense vector index inside PostgreSQL:
 
-- a local MiniLM sentence-transformers model encodes each chunk’s embedding text into a normalised vector (for example, `sentence-transformers/all-MiniLM-L6-v2`, which produces 384-dimensional sentence embeddings)
+- a local MiniLM sentence-transformers model encodes each chunk’s embedding text into a normalised vector
 - embeddings are written into a `chunk_embedding` pgvector column on the `chunks` table
 - query embeddings are computed with the same model and normalisation settings, and nearest-neighbour search uses cosine distance (`chunk_embedding <=> query_embedding`), with optional audience filters on `size_audience_tag` and `role_audience_tags`
 
-A vector retriever (`src/retrieve_vector.py`) exposes this behaviour and returns chunk dictionaries that include both `cosine_distance` and a convenience `similarity` score (`1 - cosine_distance`) alongside the usual metadata.
+A vector retriever (`src/retrieve_vector.py`) exposes this behaviour and returns chunk dictionaries that include both `cosine_distance` and a convenience `similarity` score alongside the usual metadata.
 
 A reranking layer (`src/retrieve_reranked.py`) is built on top of the vector retriever:
 
-- it first retrieves a candidate set with vector search,
-- it then applies a cross-encoder reranker to rescore those candidates,
-- it returns the reranked top results for downstream evaluation and answer grounding.
+- it first retrieves a candidate set with vector search
+- it then applies a cross-encoder reranker to rescore those candidates
+- it returns the reranked top results for downstream evaluation and answer grounding
 
 The evaluation harness (`src/evaluate_retrieval.py`) now runs these retrieval modes over `data/ground_truth_synthetic.jsonl`:
 
-- text (lexical)
-- vector (dense)
-- reranked vector (dense + cross-encoder reranking)
-- hybrid (reciprocal rank fusion over text and vector)
+- text
+- vector
+- reranked vector
+- hybrid
 
 and computes strict Hit@k and MRR based on exact `chunk_id` matches, plus relaxed metrics where same-document / same-leaf-heading matches count as partial hits. An optional JSONL debug output contains, for each question and backend, the gold labels, per-rank relevance flags, and top‑k result metadata; this is used for manual inspection but does not alter the underlying datasets.
 
@@ -372,7 +352,7 @@ On the current 27-question synthetic benchmark, the measured results were:
 - vector_reranked: strict Hit@5 0.9259259259259259, strict MRR 0.8888888888888888, relaxed Hit@10 0.9629629629629629, relaxed MRR 0.8935185185185185
 - hybrid: strict Hit@5 0.7777777777777778, strict MRR 0.3728395061728395, relaxed Hit@10 0.8888888888888888, relaxed MRR 0.38893298059964726
 
-On that benchmark, `vector_reranked` is the strongest retrieval backend and is treated as the preferred retrieval path for downstream RAG work. Plain vector retrieval remains the strongest non-reranked baseline, while text and hybrid remain useful comparative baselines and debugging tools. They operate over the same chunk corpus and audience metadata described in this document, without changing the dataset itself.
+On that benchmark, `vector_reranked` is the strongest retrieval backend and is treated as the preferred retrieval path for downstream RAG work. Plain vector retrieval remains the strongest non-reranked baseline, while text and hybrid remain useful comparative baselines and debugging tools. Query rewriting was also tested but did not improve the benchmark, so it remains an experimental helper rather than a default retrieval step.
 
 ### Vector-based answer dataset and LLM-as-a-judge annotations
 
@@ -429,11 +409,11 @@ These annotations are evaluation artefacts layered on top of the existing datase
 For a fresh clone, the default end-to-end path for retrieval and grounded answer generation is:
 
 - **Corpus and chunking**:
-  - restore the reviewed Markdown snapshot from `data/corpus_snapshots/v1_2026-07-25/` into `data/processed/` (or rerun extraction and cleanup if intentionally rebuilding),
+  - restore the reviewed Markdown snapshot from `data/corpus_snapshots/v1_2026-07-25/` into `data/processed/` or rerun extraction and cleanup if intentionally rebuilding,
   - run `src/prepare_chunks.py` to regenerate `data/chunks/chunks.jsonl` with the current heading-aware, audience-aware chunking configuration.
 
 - **Database and retrieval index**:
-  - run `src/db_init.py` to create the PostgreSQL schema (including `fts` and `chunk_embedding` columns and supporting indexes),
+  - run `src/db_init.py` to create the PostgreSQL schema, including `fts` and `chunk_embedding` columns and supporting indexes,
   - run `src/db_load_chunks.py` to load `data/chunks/chunks.jsonl` into the `chunks` table,
   - run `src/db_build_embeddings.py` to compute MiniLM embeddings and backfill the `chunk_embedding` pgvector column.
 
@@ -441,7 +421,7 @@ For a fresh clone, the default end-to-end path for retrieval and grounded answer
   - use the reranked vector retriever (`src/retrieve_reranked.py`) as the **primary** retrieval backend for both:
     - synthetic evaluation over `data/ground_truth_synthetic.jsonl`, and
     - the interactive UI and answer-generation flows,
-  - keep the plain vector (`src/retrieve_vector.py`), text (`src/retrieve_text.py`), and hybrid (`src/retrieve_hybrid.py`) retrievers available as evaluated baselines and debugging tools; they operate over the same `chunks` corpus but are not the default for the current RAG path.
+  - keep the plain vector (`src/retrieve_vector.py`), text (`src/retrieve_text.py`), hybrid (`src/retrieve_hybrid.py`), and rewrite-enabled retrieval variants available as evaluated baselines and debugging tools; they operate over the same `chunks` corpus but are not the default for the current RAG path.
 
 - **Answer-generation and judged datasets**:
   - treat `data/answers/answers_vector_v2_prompt_grounded.jsonl` as the **main** generated-answer dataset,
@@ -466,8 +446,8 @@ Key points:
 
 - **Retrieval backend**:
   - The AI Navigator uses the reranked vector retriever (`chunks.chunk_embedding` with cosine distance, then cross-encoder reranking) as its default backend.
-  - Optional audience filters are applied in the same way as in evaluation: organisation size tag (with `all_sizes` as a fallback) and role tags for AI builders and AI consumers.
-  - The plain vector, text, and hybrid retrievers remain available for evaluation and debugging, but are not wired into the default UI flow.
+  - Optional audience filters are applied in the same way as in evaluation: organisation size tag, with `all_sizes` as a fallback, and role tags for AI builders and AI consumers.
+  - The plain vector, text, hybrid, and rewrite-enabled retrieval helpers remain available for evaluation and debugging, but are not wired into the default UI flow.
 
 - **Answer generation and grounding**:
   - The UI uses the same v2 prompt-grounded answer-generation path that produced `data/answers/answers_vector_v2_prompt_grounded.jsonl`.
@@ -475,7 +455,7 @@ Key points:
     - a groundedness flag,
     - a set of `answer_chunk_ids` for grounding,
     - token usage information.
-  - The evidence panel in the UI shows the retrieved chunks (including `chunk_id`, `heading_path`, and audience tags), reusing the same fields that underpin the evaluation datasets.
+  - The evidence panel in the UI shows the retrieved chunks, including `chunk_id`, `heading_path`, and audience tags, reusing the same fields that underpin the evaluation datasets.
 
 - **Monitoring and conversation logs**:
   - Conversation logs in the `conversations` table refer back to the dataset indirectly via:

@@ -78,7 +78,7 @@ For the full audience model and chunk schema, see `docs/dataset-notes.md`.
 
 ---
 
-## Evaluation design
+## Retrieval and evaluation
 
 The project includes an evaluation-data pipeline based on curated seed passages and synthetic question generation:
 
@@ -88,6 +88,15 @@ The project includes an evaluation-data pipeline based on curated seed passages 
 4. Generate synthetic evaluation questions from vetted passages (A → Q*) and store them in `data/ground_truth_synthetic.jsonl`.
 
 This keeps the evaluation pipeline traceable: each test question can be linked back to a concrete `chunk_id`, source document, and audience slice.
+
+Retrieval is evaluated across multiple backends:
+
+- text retrieval
+- vector retrieval
+- reranked vector retrieval
+- hybrid retrieval
+
+On the current benchmark, reranked vector retrieval is the preferred default for downstream RAG flows. Query rewriting is treated as an experimental retrieval enhancement rather than an active default stage in the README-described pipeline.
 
 For the detailed seed-matching workflow, matching heuristics, and evaluation-data structure, see:
 
@@ -154,34 +163,43 @@ Scripts perform downloading, extraction, chunk preparation, deterministic seed m
 │   ├── runbook.md
 │   └── self-assessment.md
 ├── src/
-│   ├── db.py
+│   ├── db_build_embeddings.py
 │   ├── db_init.py
 │   ├── db_load_chunks.py
-│   ├── db_build_embeddings.py
+│   ├── db.py
 │   ├── download_sources.py
+│   ├── evaluate_retrieval.py
 │   ├── extract_text_html.py
 │   ├── extract_text_pdf.py
-│   ├── prepare_chunks.py
-│   ├── spotcheck_chunks.py
-│   ├── resolve_seed_draft_ids.py
-│   ├── generate_ground_truth_questions.py
-│   ├── evaluate_retrieval.py
-│   ├── retrieve_text.py
-│   ├── retrieve_vector.py
-│   ├── retrieve_reranked.py
-│   ├── retrieve_hybrid.py
 │   ├── generate_answers_v1.py
 │   ├── generate_answers.py
+│   ├── generate_ground_truth_questions.py
 │   ├── judge_answers_v1.py
 │   ├── judge_answers_v2.py
 │   ├── judge_answers.py
 │   ├── llm_client.py
+│   ├── prepare_chunks.py
 │   ├── pricing.py
+│   ├── resolve_seed_draft_ids.py
+│   ├── retrieve_hybrid.py
+│   ├── retrieve_reranked.py
+│   ├── retrieve_rewritten.py
+│   ├── retrieve_text.py
+│   ├── retrieve_vector.py
+│   ├── rewrite_query.py
+│   ├── spotcheck_chunks.py
 │   └── test_structured_output.py
+├── .dockerignore
+├── .env.example
+├── .gitignore
+├── .python-version
 ├── app.py
+├── docker-compose.yml
+├── Dockerfile
+├── LICENSE
 ├── pyproject.toml
-├── uv.lock
-└── README.md
+├── README.md
+└── uv.lock
 ```
 
 ---
@@ -265,7 +283,6 @@ uv run python src/spotcheck_chunks.py
 uv run python src/db_init.py
 uv run python src/db_load_chunks.py
 uv run python src/db_build_embeddings.py
-uv run python src/evaluate_retrieval.py
 ```
 
 ### Fresh corpus rebuild
@@ -274,54 +291,49 @@ A minimal fresh rebuild looks like this:
 
 1. Download sources:
 
-   ```bash
-   uv run python src/download_sources.py
-   ```
+```bash
+uv run python src/download_sources.py
+```
 
 2. Extract sources:
 
-   ```bash
-   uv run python src/extract_text_html.py data/raw/html
-   uv run python src/extract_text_pdf.py data/raw/pdf
-   ```
+```bash
+uv run python src/extract_text_html.py data/raw/html
+uv run python src/extract_text_pdf.py data/raw/pdf
+```
 
 3. Manually review Markdown in `data/processed/`, then preserve the reviewed Markdown as a new corpus snapshot.
 
 4. Prepare chunks:
 
-   ```bash
-   uv run python src/prepare_chunks.py
-   ```
+```bash
+uv run python src/prepare_chunks.py
+```
 
 5. Build and load the database:
 
-   ```bash
-   uv run python src/db_init.py
-   uv run python src/db_load_chunks.py
-   uv run python src/db_build_embeddings.py
-   ```
+```bash
+uv run python src/db_init.py
+uv run python src/db_load_chunks.py
+uv run python src/db_build_embeddings.py
+```
 
 6. Run retrieval:
 
-   ```bash
-   uv run python src/retrieve_text.py "your query"
-   uv run python src/retrieve_vector.py "your query"
-   uv run python src/retrieve_reranked.py "your query"
-   uv run python src/retrieve_hybrid.py "your query"
-   ```
+```bash
+uv run python src/retrieve_text.py "your query"
+uv run python src/retrieve_vector.py "your query"
+uv run python src/retrieve_reranked.py "your query"
+uv run python src/retrieve_hybrid.py "your query"
+uv run python src/retrieve_rewritten.py "your query"   # experimental
+```
 
-7. Run evaluation:
+7. Optional answer generation and judging:
 
-   ```bash
-   uv run python src/evaluate_retrieval.py
-   ```
-
-8. Optional answer generation and judging:
-
-   ```bash
-   uv run python src/generate_answers.py
-   uv run python src/judge_answers.py
-   ```
+```bash
+uv run python src/generate_answers.py
+uv run python src/judge_answers.py
+```
 
 ---
 
@@ -329,10 +341,22 @@ A minimal fresh rebuild looks like this:
 
 In addition to CLI scripts and evaluation workflows, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer.
 
-From the project root, after completing the database bootstrap sequence:
+### Local app run
+
+From the project root, after preparing the database:
 
 ```bash
 uv run python -m streamlit run app.py
+```
+
+### Docker Compose run
+
+The project also supports a containerised runtime with Docker Compose:
+
+```bash
+docker compose up -d postgres
+docker compose run --rm bootstrap
+docker compose up -d app
 ```
 
 The app provides:
@@ -408,9 +432,10 @@ The project currently includes:
 
 Planned work includes:
 
-- containerisation and simplified local startup
-- targeted retrieval enhancements such as query rewriting or additional reranking experiments, evaluated against the existing benchmark
+- experimental retrieval paths such as query rewriting and additional reranking experiments, evaluated against the existing benchmark
 - future cloud deployment once the local evaluation baseline and documentation are stable
+
+---
 
 ## Notes on ACSC material
 

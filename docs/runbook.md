@@ -1,6 +1,6 @@
 # Runbook
 
-This project is designed so another person can recreate the Python environment, rebuild the ACSC corpus and PostgreSQL retrieval index, regenerate or reuse evaluation artefacts, and rerun comparative retrieval evaluation from a clean checkout.
+This project is designed so another person can recreate the Python environment, rebuild the ACSC corpus and PostgreSQL retrieval index, regenerate or reuse evaluation artefacts, rerun comparative retrieval evaluation, and launch the interactive app from a clean checkout.
 
 The workflow combines manifest-defined source ingestion, scripted transformations, documented manual checkpoints, and versioned generated artefacts. This document focuses on environment, inputs, execution steps, manual checkpoints, and outputs rather than re-explaining the project rationale.
 
@@ -78,13 +78,11 @@ The vector retrieval pipeline uses the sentence-transformers model configured in
 Record the exact identifier used by the code here before treating a run as a strict baseline:
 
 ```text
-Embedding model: <exact sentence-transformers model identifier>
-Embedding dimension: <dimension used by the database schema>
+Embedding model: sentence-transformers/all-MiniLM-L6-v2
+Embedding dimension: 384
 Embedding normalisation: L2-normalised before storage and query-time comparison
 Distance metric: cosine distance through pgvector
 ```
-
-For example, `sentence-transformers/all-MiniLM-L6-v2` maps sentences and paragraphs to a 384-dimensional dense vector space. Replace the placeholder above only with the exact model identifier actually configured in this repository.
 
 ---
 
@@ -166,7 +164,7 @@ This project supports two related, but distinct, workflows:
 
 Do not treat a fresh download and extraction as equivalent to strict v1 reproduction, because ACSC source documents, extraction outputs, and semi-manual Markdown cleanup may differ.
 
-### 3.1 Download source documents (fresh rebuild only)
+### 3.1 Download source documents
 
 To build a new corpus from upstream ACSC sources, download all manifest-defined core sources:
 
@@ -187,7 +185,7 @@ data/download_metadata.json
 
 For strict v1 reproduction using the existing snapshot, you can skip this step and restore the snapshot instead.
 
-### 3.2 Extract sources into Markdown (fresh rebuild only)
+### 3.2 Extract sources into Markdown
 
 Extract HTML:
 
@@ -216,7 +214,7 @@ At this point, all in-scope source documents should exist as Markdown files in `
 
 Manual Markdown review is a semi-manual quality-control step, so a fresh extraction may not reproduce the exact reviewed corpus used for the current retrieval baseline.
 
-The repository preserves the reviewed Markdown used by the current v1 corpus as a versioned snapshot, for example:
+The repository preserves the reviewed Markdown used by the current corpus as a versioned snapshot, for example:
 
 ```text
 data/corpus_snapshots/v1_2026-07-25/
@@ -228,7 +226,7 @@ This snapshot contains:
 - `manifest.csv` — the source manifest associated with this snapshot
 - `checksums.sha256` — file checksums for snapshot verification
 
-To reproduce the current v1 baseline, restore the snapshot into the working processed-corpus directory:
+To reproduce the current baseline, restore the snapshot into the working processed-corpus directory:
 
 ```bash
 mkdir -p data/processed
@@ -239,7 +237,7 @@ Then continue from chunk preparation onward.
 
 The `data/processed/` directory remains the overwriteable working location for new extraction and manual cleanup. The snapshot directory should not be modified in place; if the corpus is updated later, create a new dated snapshot directory and document the change in `docs/project-log.md`.
 
-### 3.4 Manual Markdown review (fresh rebuild only)
+### 3.4 Manual Markdown review
 
 Perform a one-time manual review of the Markdown files in `data/processed/`.
 
@@ -545,7 +543,7 @@ Run this script whenever:
 
 ### 3.14 Run manual retrieval checks
 
-The repository provides three audience-aware retrieval helpers.
+The repository provides four audience-aware retrieval helpers.
 
 Text retrieval:
 
@@ -559,16 +557,16 @@ Vector retrieval:
 uv run python src/retrieve_vector.py "your query"
 ```
 
-Hybrid retrieval:
-
-```bash
-uv run python src/retrieve_hybrid.py "your query"
-```
-
 Reranked vector retrieval:
 
 ```bash
 uv run python src/retrieve_reranked.py "your query"
+```
+
+Hybrid retrieval:
+
+```bash
+uv run python src/retrieve_hybrid.py "your query"
 ```
 
 All retrieval helpers support optional audience filters:
@@ -694,11 +692,11 @@ On the current benchmark:
 - hybrid reciprocal-rank fusion improves on text retrieval
 - vector retrieval is strong
 - reranked vector retrieval is the strongest-performing backend
-- hybrid does not outperform reranked vector retrieval
+- query rewriting was also tested, but it did not improve the benchmark, so it remains experimental rather than a default retrieval step
 
 Accordingly, `src/retrieve_reranked.py` is the preferred retrieval baseline for the first answer-generation stage.
 
-Plain vector retrieval, text retrieval, and hybrid retrieval remain available as reproducible comparison and debugging backends. Any future query rewriting, hybrid weighting, embedding-model change, or reranking change should be evaluated against the current reranked-vector baseline rather than assumed to be an improvement.
+Plain vector retrieval, text retrieval, hybrid retrieval, and rewrite-enabled variants remain available as reproducible comparison and debugging backends. Any future query rewriting, hybrid weighting, embedding-model change, or reranking change should be evaluated against the current reranked-vector baseline rather than assumed to be an improvement.
 
 ### 3.18 Vector-based answer generation and LLM-as-judge evaluation
 
@@ -715,7 +713,7 @@ uv run python src/generate_answers.py
 This script:
 
 - reads synthetic questions from `data/ground_truth_synthetic.jsonl`
-- uses the selected retrieval backend (typically `top_k=5`) with audience filters derived from:
+- uses the selected retrieval backend, typically `top_k=5`, with audience filters derived from:
   - `target_size`
   - `target_role`
 - assembles a structured list of retrieved chunks per question
@@ -793,7 +791,7 @@ These files, together with the v1 and v2 JSONL outputs, document the progression
 
 Aggregations over the judged files, such as the proportion of `good` answers by `target_size`, `target_role`, or `source_id`, can be computed in separate analysis scripts and regenerated as needed. These are derived outputs and are not treated as primary corpus artefacts.
 
-### 3.19 Interactive Streamlit UI and monitoring (Docker Runtime)
+### 3.19 Interactive Streamlit UI and monitoring
 
 In addition to CLI scripts and notebooks used for evaluation, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer. This interactive application is deployed via Docker Compose to ensure a reproducible runtime environment.
 
@@ -805,20 +803,20 @@ From the project root, use the dedicated `bootstrap` container to initialize the
    ```bash
    docker compose up -d postgres
    ```
-   *Wait a moment for the database to become healthy.*
+   Wait until the service is healthy.
 
 2. **Run the bootstrap service:**
    ```bash
    docker compose run --rm bootstrap
    ```
-   *This runs `db_init.py`, `db_load_chunks.py`, and `db_build_embeddings.py` inside a containerized environment, pointing at the `postgres` service.*
+   This runs `db_init.py`, `db_load_chunks.py`, and `db_build_embeddings.py` inside a containerized environment, pointing at the `postgres` service.
 
 3. **Start the application:**
    ```bash
    docker compose up -d app
    ```
 
-The Streamlit UI will now be available at `http://localhost:8501`.
+The Streamlit UI is then available at `http://localhost:8501`.
 
 The app provides two tabs:
 
@@ -837,7 +835,7 @@ The app provides two tabs:
 
 #### 3.19.2 Normal restart and full reset
 
-Once the database is bootstrapped, you do not need to run the bootstrap service again unless you change the underlying corpus.
+Once the database is bootstrapped, you do not need to run the bootstrap service again unless you change the underlying corpus or want to rebuild embeddings.
 
 **To restart the application:**
 ```bash
@@ -853,7 +851,8 @@ docker compose down
 ```bash
 docker compose down -v
 ```
-*(After a full reset, you must repeat the First-time application bootstrap steps.)*
+
+After a full reset, repeat the first-time bootstrap steps.
 
 #### 3.19.3 Conversation and feedback logging
 
@@ -868,7 +867,7 @@ These monitoring tables are part of the same database environment as the retriev
 
 #### 3.19.4 Reproducibility considerations
 
-The Docker Compose setup provides a clean boundary between the **offline evaluation pipeline** (run locally via `uv run ...`) and the **interactive runtime** (run via `docker compose`).
+The Docker Compose setup provides a clean boundary between the offline evaluation pipeline, run locally via `uv run ...`, and the interactive runtime, run via `docker compose`.
 
 The containerized app depends on the exact same reviewed corpus snapshot and heading-aware chunking output in `data/chunks/chunks.jsonl`. It logs conversations and feedback, but it does not modify the underlying corpus, seeds, or evaluation datasets.
 
@@ -958,13 +957,15 @@ PostgreSQL conversations table
 PostgreSQL feedback table
 ```
 
-These tables store conversation-level metrics (tokens, latency, cost, audience filters) and thumbs-up or thumbs-down feedback for the interactive app, and are derived from, but do not modify, the underlying corpus and evaluation artefacts.
+These tables store conversation-level metrics and thumbs-up or thumbs-down feedback for the interactive app, and are derived from, but do not modify, the underlying corpus and evaluation artefacts.
 
 ### Interactive UI
 
 ```text
 app.py  (Streamlit AI Navigator and Monitoring Dashboard)
 .streamlit/config.toml
+docker-compose.yml
+Dockerfile
 ```
 
 These files provide the optional Streamlit interface over the reranked vector and v2 prompt-grounded answer-generation path, plus a lightweight monitoring dashboard backed by the `conversations` and `feedback` tables.
@@ -984,13 +985,13 @@ From a clean clone, a reviewer can:
 5. Regenerate heading-aware chunks with `src/prepare_chunks.py` and inspect sampled chunk records from `data/chunks/spotcheck.*` for QA.
 6. Recreate deterministic seed-to-chunk matching and candidate files with `src/resolve_seed_draft_ids.py`.
 7. Reuse committed LLM-vetted seed and synthetic-question artefacts to reproduce the current benchmark, or regenerate them as a new evaluation-data version.
-8. Initialise and populate the local PostgreSQL retrieval index for offline evaluation by running (`db_init.py` → `db_load_chunks.py` → `db_build_embeddings.py`).
+8. Initialise and populate the local PostgreSQL retrieval index for offline evaluation by running `db_init.py` → `db_load_chunks.py` → `db_build_embeddings.py`.
 9. Build pgvector embeddings using the configured sentence-transformers model if they are not already present.
 10. Run text, vector, reranked vector, and hybrid retrieval over manual queries with the same audience-filter semantics as described in this document.
 11. Rerun comparative retrieval evaluation over the same synthetic question set to reproduce the reported retrieval metrics.
 12. Export per-question debug records to inspect backend-specific rankings, scores, relevance labels, and audience context.
 13. Reproduce the selected reranked-vector retrieval baseline, and rerun the derived answer-generation and judge stage using the preserved v1 and v2 answer artefacts and scripts.
 14. Launch the interactive application using Docker Compose, executing the containerized bootstrap sequence (`docker compose up -d postgres`, `docker compose run --rm bootstrap`, `docker compose up -d app`).
-15. Interact with the Streamlit AI Navigator and reproduce the lightweight monitoring views (metrics, charts, and recent-conversation table) using local demo traffic via `localhost:8501`.
+15. Interact with the Streamlit AI Navigator and reproduce the lightweight monitoring views using local demo traffic via `http://localhost:8501`.
 
 This runbook intentionally treats the evaluated retrieval baseline as the core reproducible path. The grounded answer-generation and judge layer, and the interactive Streamlit UI with monitoring, are derived stages built on top of the existing retrieval artefacts and can be rerun separately using the preserved v1 and v2 outputs, scripts, Docker Compose configurations, and `.streamlit/config.toml`.
