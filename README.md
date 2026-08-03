@@ -138,68 +138,24 @@ Scripts perform downloading, extraction, chunk preparation, deterministic seed m
 
 ```text
 .
-├── .streamlit/
-│   └── config.toml
-├── data/
-│   ├── raw/
-│   │   ├── html/
-│   │   └── pdf/
-│   ├── processed/
-│   ├── corpus_snapshots/
-│   │   └── v1_2026-07-25/
-│   ├── answers/
-│   ├── chunks/
-│   ├── download_metadata.json
-│   ├── source_manifest_core.csv
-│   ├── ground_truth_seed_draft.json
-│   ├── seed_chunk_candidates.json
-│   ├── ground_truth_seeds_vetted.jsonl
-│   └── ground_truth_synthetic.jsonl
-├── docs/
-│   ├── dataset-notes.md
-│   ├── decisions.md
+├── data/                  # Datasets, chunks, and evaluation outputs
+│   ├── raw/               # Downloaded ACSC HTML and PDF sources
+│   ├── processed/         # Extracted and cleaned Markdown
+│   ├── corpus_snapshots/  # Versioned, reviewed Markdown backups
+│   ├── answers/           # Generated and judged LLM answers
+│   └── chunks/            # Retrieval-ready JSONL corpus
+├── docs/                  # Architectural decisions, notes, and logs
+│   ├── runbook.md         # ⬅ Start here for execution steps
+│   ├── dataset-notes.md 
 │   ├── evaluation-notes.md
-│   ├── project-log.md
-│   ├── runbook.md
-│   └── self-assessment.md
-├── src/
-│   ├── db_build_embeddings.py
-│   ├── db_init.py
-│   ├── db_load_chunks.py
-│   ├── db.py
-│   ├── download_sources.py
-│   ├── evaluate_retrieval.py
-│   ├── extract_text_html.py
-│   ├── extract_text_pdf.py
-│   ├── generate_answers_v1.py
-│   ├── generate_answers.py
-│   ├── generate_ground_truth_questions.py
-│   ├── judge_answers_v1.py
-│   ├── judge_answers_v2.py
-│   ├── judge_answers.py
-│   ├── llm_client.py
-│   ├── prepare_chunks.py
-│   ├── pricing.py
-│   ├── resolve_seed_draft_ids.py
-│   ├── retrieve_hybrid.py
-│   ├── retrieve_reranked.py
-│   ├── retrieve_rewritten.py
-│   ├── retrieve_text.py
-│   ├── retrieve_vector.py
-│   ├── rewrite_query.py
-│   ├── spotcheck_chunks.py
-│   └── test_structured_output.py
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── .python-version
-├── app.py
-├── docker-compose.yml
+│   └── ...                # (Other project docs)
+├── src/                   # Python pipeline (ETL, DB, Retrieval, LLM scripts)
+├── .streamlit/            # UI configuration
+├── app.py                 # Streamlit UI entry point
+├── docker-compose.yml     # Containerized database and app setup
 ├── Dockerfile
-├── LICENSE
-├── pyproject.toml
-├── README.md
-└── uv.lock
+├── pyproject.toml         # Dependencies (uv)
+└── README.md
 ```
 
 ---
@@ -425,14 +381,16 @@ The project currently includes:
 - evaluation seed design, matching, vetting, and synthetic question generation
 - PostgreSQL schema initialisation, chunk loading, and MiniLM-based embeddings via pgvector
 - evaluated text, vector, reranked vector, and hybrid retrieval over a synthetic benchmark
-- evaluated answer-generation variants with an LLM-as-a-judge layer
-- a selected default path: reranked vector retrieval + v2 prompt-grounded answers
+- evaluated answer-generation variants with an LLM-as-a-judge layer, including:
+  - a frozen plain-vector v2 baseline (`answers_vector_v2_prompt_grounded.jsonl`)
+  - a new reranked-vector v2 artefact (`answers_vector_reranked_v2_prompt_grounded.jsonl`)
+- a selected default path: reranked vector retrieval + v2 prompt-grounded answers (with the new answer artefact)
 - a Streamlit-based interactive UI and monitoring dashboard
 - conversation and feedback logging into PostgreSQL
 
 Planned work includes:
 
-- experimental retrieval paths such as query rewriting and additional reranking experiments, evaluated against the existing benchmark
+- formal benchmark evaluation of experimental retrieval paths (e.g. query rewriting, additional reranking variants) against the existing synthetic set
 - future cloud deployment once the local evaluation baseline and documentation are stable
 
 ---

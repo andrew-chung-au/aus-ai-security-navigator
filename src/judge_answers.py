@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 from llm_client import get_default_model, llm_structured_retry
 
 
-DEFAULT_ANSWERS_INPUT = Path("data/answers/answers_vector_v1.jsonl")
+DEFAULT_ANSWERS_INPUT = Path("data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl")
 DEFAULT_CHUNKS_INPUT = Path("data/chunks/chunks.jsonl")
-DEFAULT_OUTPUT = Path("data/answers/answers_vector_v1_judged.jsonl")
+DEFAULT_OUTPUT = Path("data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl")
 
 
 class AnswerEvaluation(BaseModel):

@@ -25,7 +25,7 @@ from generate_answers import (
 )
 from llm_client import get_default_model, llm_structured_retry
 from pricing import estimate_token_cost_usd
-from retrieve_vector import retrieve_chunks_vector
+from retrieve_reranked import retrieve_chunks_reranked
 
 APP_TITLE = "aus-ai-security-navigator"
 DEFAULT_TOP_K = 5
@@ -63,7 +63,7 @@ def run_live_answer(
     top_k: int,
     model: str | None = None,
 ) -> tuple[dict[str, Any], Any]:
-    retrieved = retrieve_chunks_vector(
+    retrieved = retrieve_chunks_reranked(
         query=question,
         limit=top_k,
         size_tag=None if size_tag == "all_sizes" else size_tag,
@@ -253,6 +253,10 @@ def render_evidence(result: dict[str, Any]) -> None:
         heading_path = " > ".join(chunk.get("heading_path", [])) or "(no heading path)"
         similarity = chunk.get("similarity")
         distance = chunk.get("cosine_distance")
+        reranker_score = chunk.get("reranker_score")
+        vector_rank = chunk.get("vector_rank")
+        vector_similarity = chunk.get("vector_similarity")
+        vector_distance = chunk.get("vector_cosine_distance")
         is_used = chunk["chunk_id"] in answer_chunk_ids
 
         label = f"#{chunk['rank']} - {chunk.get('document_title') or 'Untitled'}"
@@ -263,10 +267,32 @@ def render_evidence(result: dict[str, Any]) -> None:
             st.markdown(f"**Chunk ID:** `{chunk['chunk_id']}`")
             st.markdown(f"**Heading path:** {heading_path}")
             st.markdown(
-                f"**Similarity:** {similarity:.4f}" if similarity is not None else "**Similarity:** n/a"
+                f"**Reranker score:** {reranker_score:.4f}"
+                if reranker_score is not None
+                else "**Reranker score:** n/a"
             )
             st.markdown(
-                f"**Cosine distance:** {distance:.4f}" if distance is not None else "**Cosine distance:** n/a"
+                f"**Vector rank:** {vector_rank}"
+                if vector_rank is not None
+                else "**Vector rank:** n/a"
+            )
+            st.markdown(
+                f"**Vector similarity:** {vector_similarity:.4f}"
+                if vector_similarity is not None
+                else (
+                    f"**Similarity:** {similarity:.4f}"
+                    if similarity is not None
+                    else "**Vector similarity:** n/a"
+                )
+            )
+            st.markdown(
+                f"**Vector cosine distance:** {vector_distance:.4f}"
+                if vector_distance is not None
+                else (
+                    f"**Cosine distance:** {distance:.4f}"
+                    if distance is not None
+                    else "**Vector cosine distance:** n/a"
+                )
             )
             st.markdown(f"**Size tag:** `{chunk.get('size_audience_tag')}`")
             st.markdown(f"**Role tags:** `{chunk.get('role_audience_tags', [])}`")
@@ -307,7 +333,10 @@ def render_feedback_controls() -> None:
 
 def render_navigator_tab() -> None:
     st.header("AI Navigator")
-    st.write("Ask a question about ACSC AI security guidance and inspect the grounded evidence.")
+    st.write(
+        "Ask a question about ACSC AI security guidance and inspect the grounded evidence "
+        "retrieved with the default reranked vector pipeline."
+    )
 
     active_model = get_default_model()
 
@@ -327,6 +356,7 @@ def render_navigator_tab() -> None:
         )
         role_tag = None if role_option == "any" else role_option
         top_k = st.slider("Top-k retrieved chunks", min_value=3, max_value=10, value=DEFAULT_TOP_K, step=1)
+        st.caption("Retrieval backend: reranked vector")
         st.caption(f"Model: {active_model}")
 
     question = st.text_area(

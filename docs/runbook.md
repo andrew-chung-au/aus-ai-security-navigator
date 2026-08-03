@@ -702,9 +702,13 @@ Plain vector retrieval, text retrieval, hybrid retrieval, and rewrite-enabled va
 
 In addition to retrieval evaluation, the project preserves a derived answer-generation and judge layer that operates on the existing retrieval corpus and synthetic question set.
 
-#### 3.18.1 Generate vector-based grounded answers
+The answer-generation pipeline has evolved alongside the retrieval baselines. Earlier answer artefacts were generated using plain vector retrieval to fairly compare prompt variants. The current default answer-generation path uses the reranked vector retrieval backend together with the v2 prompt-grounded strategy.
 
-Generate grounded answers for the synthetic question set using the preferred retrieval path:
+---
+
+#### 3.18.1 Generate grounded answers (reranked vector + v2 prompt)
+
+Generate grounded answers for the synthetic question set using the current default retrieval path (reranked vector retrieval + v2 prompt-grounded pipeline):
 
 ```bash
 uv run python src/generate_answers.py
@@ -713,10 +717,10 @@ uv run python src/generate_answers.py
 This script:
 
 - reads synthetic questions from `data/ground_truth_synthetic.jsonl`
-- uses the selected retrieval backend, typically `top_k=5`, with audience filters derived from:
+- uses the selected retrieval backend (`retrieve_reranked.py`) with `top_k=5` by default, and audience filters derived from:
   - `target_size`
   - `target_role`
-- assembles a structured list of retrieved chunks per question
+- assembles a structured list of retrieved chunks per question, including reranker scores and vector ranks
 - calls the LLM client helper to generate a grounded answer conditioned on:
   - the question
   - the retrieved chunk metadata and text
@@ -724,29 +728,40 @@ This script:
 - writes one JSON object per question to:
 
 ```text
-data/answers/answers_vector_v2_prompt_grounded.jsonl
+data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl
 ```
 
-The earlier baseline answer-generation variant is preserved at:
+This file is the current default answer-generation artefact for downstream judging and comparison.
 
-```text
-data/answers/answers_vector_v1.jsonl
-```
+##### Frozen baseline artefacts
 
-Each record typically includes:
+The project preserves earlier answer-generation outputs as frozen baselines:
+
+- `data/answers/answers_vector_v1.jsonl` — earlier answer-generation variant
+- `data/answers/answers_vector_v2_prompt_grounded.jsonl` — plain vector retrieval + v2 prompt (frozen baseline)
+
+These were generated using the plain vector retriever to fairly evaluate the v1 and v2 prompts against one another. They should be treated as historical reference points, not regenerated unless intentionally creating a new baseline version.
+
+If you regenerate answers today using the live default reranked-vector path, the output metrics and contents will differ from the frozen historical benchmarks because the underlying retrieval backend has changed.
+
+##### Output schema
+
+Each record in `answers_vector_reranked_v2_prompt_grounded.jsonl` typically includes:
 
 - `question_id`, `question`, `seed_id`
 - `target_size`, `target_role`
 - `gold_source_id`, `gold_chunk_id`
-- `retrieved_chunks`
+- `retrieved_chunks` — including `rank`, `chunk_id`, `source_id`, `document_title`, `heading_path`, `similarity`, `reranker_score`, `vector_rank`
 - `answer_text`
 - `answer_chunk_ids`
 - `grounded`
 - `model_id`, `top_k`, and `usage` diagnostics
 
+---
+
 #### 3.18.2 Judge answers against gold passages
 
-Evaluate the generated answers against their gold passages using the project’s fixed judge pipeline:
+Evaluate the generated answers against their gold passages using the project's fixed judge pipeline:
 
 ```bash
 uv run python src/judge_answers.py
@@ -761,12 +776,30 @@ This script:
 - applies a rubric that focuses on semantic equivalence, completeness, and named-resource coverage when the question asks for specific resources
 - writes judged records to the corresponding judged output files
 
-The project preserves judged outputs for both answer-generation variants:
+##### Current default judged output
+
+The current default judged output corresponds to the reranked-vector answer artefact:
+
+- `data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl`
+
+Run the judge against the new answer file:
+
+```bash
+uv run python src/judge_answers.py \
+  --answers-input data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl \
+  --output data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl
+```
+
+(Adjust command-line flags to match the actual `judge_answers.py` interface.)
+
+##### Frozen baseline judged outputs
+
+The project preserves earlier judged outputs as frozen baselines:
 
 - `data/answers/answers_vector_v1_judged.jsonl`
 - `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`
 
-Each judged record extends the answer fields with:
+Each judged record extends the original answer fields with:
 
 - `judge_model_id`
 - `judge_score`
@@ -774,6 +807,10 @@ Each judged record extends the answer fields with:
 - `judge_gold_chunk_text`
 - `judge_gold_heading_path`
 - `judge_usage`
+
+These should be treated as historical reference points tied to their respective answer-generation variants.
+
+---
 
 #### 3.18.3 Preserved script versions
 
@@ -787,9 +824,15 @@ src/judge_answers_v2.py
 
 These files, together with the v1 and v2 JSONL outputs, document the progression of the answer-generation and judging workflow without overwriting earlier implementations.
 
+The current `src/generate_answers.py` has been updated to use reranked vector retrieval (`retrieve_reranked.py`) and writes to the new `answers_vector_reranked_v2_prompt_grounded.jsonl` artefact. Earlier answer-generation behaviour can be inspected in the preserved scripts if needed.
+
+---
+
 #### 3.18.4 Optional analysis outputs
 
 Aggregations over the judged files, such as the proportion of `good` answers by `target_size`, `target_role`, or `source_id`, can be computed in separate analysis scripts and regenerated as needed. These are derived outputs and are not treated as primary corpus artefacts.
+
+When comparing across answer-generation variants, treat the plain-vector artefacts (`answers_vector_v1*` and `answers_vector_v2_prompt_grounded*`) as frozen baselines, and the reranked-vector artefacts (`answers_vector_reranked_v2_prompt_grounded*`) as the current default for evaluation and comparison.
 
 ### 3.19 Interactive Streamlit UI and monitoring
 
