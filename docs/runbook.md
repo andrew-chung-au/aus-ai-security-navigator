@@ -6,6 +6,23 @@ The workflow combines manifest-defined source ingestion, scripted transformation
 
 ---
 
+## Reviewer verification path
+
+For a quick assessment without rebuilding the project:
+
+1. Open the live application: [AUS AI Security Navigator](http://54.167.24.156:8501/).
+2. Test the **AI Navigator** with an ACSC AI security question.
+3. Apply optional organisation-size and role filters.
+4. Inspect the displayed answer, source evidence, and chunk metadata.
+5. Open the **Monitoring Dashboard** to verify feedback collection and the five monitoring charts.
+6. Return to the [README assessment evidence map](../README.md#assessment-evidence) to locate repository evidence for each rubric criterion.
+
+The live deployment uses the same selected default path as the documented local runtime: reranked-vector retrieval plus v2 prompt-grounded answer generation.
+
+For full local reproduction, continue with the sections below.
+
+---
+
 ## 1. Environment
 
 ### Requirements

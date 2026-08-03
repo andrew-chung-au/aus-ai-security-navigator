@@ -1,249 +1,459 @@
 # Self-assessment
 
-This document tracks the current state of the project against a set of evaluation criteria inspired by common RAG best practices. The goal is to support honest self-reflection, monitor project progression over time, and identify concrete areas for improvement, not to optimise for any particular course score.
+This document maps the current project state to the peer-review evaluation criteria. It is intended to provide an honest, easy-to-check evidence trail for reviewers and to identify remaining improvement areas.
 
-`README.md` is the main project overview, `docs/runbook.md` is the main execution and setup guide, and `docs/evaluation-notes.md` is the main evaluation reference. This file is for reflection, progress tracking, and guiding documentation and implementation work.
-
----
-
-## Problem description
-
-- **Poor**: The problem is not described.
-- **OK**: The problem is described but briefly or unclearly.
-- **Good**: The problem is well-described and it's clear what problem the project solves.
+For the project overview, live deployment, and rubric evidence map, see the [README](../README.md).  
+For complete local reproduction and deployment steps, see the [runbook](runbook.md).  
+For retrieval and answer-generation results, see the [evaluation notes](evaluation-notes.md).
 
 ---
 
-## Retrieval flow
+## Live application
 
-- **Poor**: No knowledge base or LLM is used.
-- **OK**: No knowledge base is used, and the LLM is queried directly.
-- **Good**: Both a knowledge base and an LLM are used in the flow.
+The deployed reviewer-facing application is available at:
 
----
+**[AUS AI Security Navigator — Streamlit app](http://54.167.24.156:8501/)**
 
-## Retrieval evaluation
+The live app exposes the selected default RAG path:
 
-- **Poor**: No evaluation of retrieval is provided.
-- **OK**: Only one retrieval approach is evaluated.
-- **Good**: Multiple retrieval approaches are evaluated, and the best one is used.
-
----
-
-## LLM evaluation
-
-- **Poor**: No evaluation of final LLM output is provided.
-- **OK**: At least one answer-generation or final-output evaluation approach is implemented.
-- **Good**: Multiple answer-generation or final-output approaches are evaluated, and the best one is used.
+- Reranked-vector retrieval
+- V2 prompt-grounded answer generation
+- Evidence inspection with retrieved ACSC source metadata
+- Organisation-size and role filters
+- Conversation logging, feedback collection, and a monitoring dashboard
 
 ---
 
-## Interface
+## Reviewer quick check
 
-- **Poor**: No way to interact with the application at all.
-- **OK**: Command line interface, a script, or a Jupyter notebook.
-- **Good**: UI (e.g., Streamlit), web application (e.g., Django), or an API (e.g., built with FastAPI).
+A reviewer can verify the main implemented capabilities without rebuilding the project:
 
----
-
-## Ingestion pipeline
-
-- **Poor**: No ingestion.
-- **OK**: Semi-automated ingestion of the dataset into the knowledge base, e.g., with a Jupyter notebook or a Python script.
-- **Good**: Automated ingestion with a special tool (e.g., Kestra, dlt, Airflow, Prefect).
+1. Open the [live Streamlit application](http://54.167.24.156:8501/).
+2. Ask an ACSC AI security question in **AI Navigator**.
+3. Optionally apply organisation-size and role filters.
+4. Inspect the returned answer and displayed ACSC evidence.
+5. Open the **Monitoring Dashboard** to verify telemetry, feedback collection, and charts.
+6. Use the [README assessment evidence map](../README.md#assessment-evidence) to locate repository evidence for each criterion.
 
 ---
 
-## Monitoring
+## Score summary
 
-- **Poor**: No monitoring.
-- **OK**: User feedback is collected OR there's a monitoring dashboard.
-- **Good**: User feedback is collected and there's a dashboard with at least 5 charts.
+**Self-assessed core score: 17/18**
+
+**Implemented bonus features:**
+
+- Hybrid search evaluation
+- Document reranking
+- User query rewriting evaluation
+- Cloud deployment
+
+The one core point not claimed is for ingestion orchestration: the ingestion workflow is scripted and reproducible, but it does not use a dedicated orchestration tool such as Airflow, Prefect, dlt, Kestra, or similar.
+
+| Criterion | Self-assessed score | Summary |
+|---|---:|---|
+| Problem description | 2/2 | Clear problem, users, scope, and retrieval rationale |
+| Retrieval flow | 2/2 | ACSC knowledge base plus grounded LLM answer generation |
+| Retrieval evaluation | 2/2 | Text, vector, reranked-vector, and hybrid retrieval evaluated; best backend selected |
+| LLM evaluation | 2/2 | Multiple grounded answer-generation approaches evaluated; stronger variant selected |
+| Interface | 2/2 | Streamlit UI deployed for reviewer access |
+| Ingestion pipeline | 1/2 | Scripted semi-automated pipeline with manual review checkpoint |
+| Monitoring | 2/2 | User feedback plus dashboard with at least five charts |
+| Containerization | 2/2 | Database, bootstrap, and application services run through Docker Compose |
+| Reproducibility | 2/2 | Accessible source data, pinned dependencies, runbook, corpus snapshot, and Docker runtime |
+| Hybrid search | +1 | Implemented and evaluated |
+| Document reranking | +1 | Implemented, evaluated, and selected as default retrieval |
+| User query rewriting | +1 | Implemented and evaluated; retained as experimental |
+| Cloud deployment | +2 | Live EC2 deployment for reviewer access |
 
 ---
 
-## Containerization
+## Criterion definitions
 
-- **Poor**: No containerization.
-- **OK**: Dockerfile is provided for the main application OR there's a docker-compose for the dependencies only.
-- **Good**: Everything is in docker-compose.
+### Problem description
+
+- **0 points:** The problem is not described.
+- **1 point:** The problem is described but briefly or unclearly.
+- **2 points:** The problem is well-described and it is clear what problem the project solves.
+
+### Retrieval flow
+
+- **0 points:** No knowledge base or LLM is used.
+- **1 point:** No knowledge base is used, and the LLM is queried directly.
+- **2 points:** Both a knowledge base and an LLM are used in the flow.
+
+### Retrieval evaluation
+
+- **0 points:** No evaluation of retrieval is provided.
+- **1 point:** Only one retrieval approach is evaluated.
+- **2 points:** Multiple retrieval approaches are evaluated, and the best one is used.
+
+### LLM evaluation
+
+- **0 points:** No evaluation of final LLM output is provided.
+- **1 point:** Only one approach, such as one prompt, is evaluated.
+- **2 points:** Multiple approaches are evaluated, and the best one is used.
+
+### Interface
+
+- **0 points:** No way to interact with the application at all.
+- **1 point:** Command line interface, a script, or a Jupyter notebook.
+- **2 points:** A UI, web application, or API is available.
+
+### Ingestion pipeline
+
+- **0 points:** No ingestion.
+- **1 point:** Semi-automated ingestion of the dataset into the knowledge base, such as with scripts or a notebook.
+- **2 points:** Automated ingestion with a dedicated orchestration tool, such as Kestra, dlt, Airflow, or Prefect.
+
+### Monitoring
+
+- **0 points:** No monitoring.
+- **1 point:** User feedback is collected or a monitoring dashboard exists.
+- **2 points:** User feedback is collected and a dashboard contains at least five charts.
+
+### Containerization
+
+- **0 points:** No containerization.
+- **1 point:** A Dockerfile is provided for the main application, or Docker Compose is used only for dependencies.
+- **2 points:** The complete runtime is defined in Docker Compose.
+
+### Reproducibility
+
+- **0 points:** No instructions are provided, data is missing, or access is unclear.
+- **1 point:** Instructions are incomplete, or code works but data is missing.
+- **2 points:** Instructions are clear, the dataset is accessible, the project is easy to run, and dependency versions are specified.
 
 ---
 
-## Reproducibility
+## Problem description — 2/2
 
-- **Poor**: No instructions on how to run the code, the data is missing, or it's unclear how to access it.
-- **OK**: Some instructions are provided but are incomplete, OR instructions are clear and complete, the code works, but the data is missing.
-- **Good**: Instructions are clear, the dataset is accessible, it's easy to run the code, and the versions for all dependencies are specified.
+The project addresses a clear problem: official ACSC guidance on AI security is distributed across multiple documents, formats, and audience-specific publications. This makes it difficult for Australian organisations to quickly find relevant, trustworthy guidance for questions about secure AI adoption, AI supply-chain risk, AI-enabled cyber attacks, and related controls.
+
+The project provides a retrieval-augmented assistant over a curated ACSC corpus. Rather than relying on general LLM advice alone, it retrieves relevant ACSC evidence and generates answers grounded in that material.
+
+**Evidence:**
+
+- [README problem statement](../README.md#problem-statement)
+- [README project scope](../README.md#project-scope)
+- [Dataset notes](dataset-notes.md)
+- [Architecture decisions](decisions.md)
+
+---
+
+## Retrieval flow — 2/2
+
+The project uses both a knowledge base and an LLM-supported answer flow.
+
+ACSC HTML and PDF guidance is downloaded, extracted, reviewed, chunked, and stored as retrieval-ready records. Chunks are loaded into PostgreSQL with pgvector embeddings and full-text search support. The selected UI path retrieves evidence using reranked-vector retrieval, then generates a v2 prompt-grounded answer from the retrieved ACSC chunks.
+
+The LLM is also used in supporting evaluation stages, including seed vetting, synthetic-question generation, answer generation, and answer judging.
+
+**Evidence:**
+
+- `data/chunks/chunks.jsonl`
+- `src/db_init.py`
+- `src/db_load_chunks.py`
+- `src/db_build_embeddings.py`
+- `src/retrieve_reranked.py`
+- `src/generate_answers.py`
+- `src/judge_answers.py`
+- `src/llm_client.py`
+- `app.py`
+- [Live application](http://54.167.24.156:8501/)
+
+---
+
+## Retrieval evaluation — 2/2
+
+Retrieval quality is evaluated across multiple approaches using the same synthetic 27-question benchmark:
+
+- Text retrieval
+- Vector retrieval
+- Reranked-vector retrieval
+- Hybrid retrieval
+
+The benchmark is built from curated ACSC seed passages that are matched to concrete chunks, vetted, and used to generate traceable synthetic questions. Retrieval evaluation reports metrics including strict and relaxed Hit@k and MRR.
+
+Reranked-vector retrieval performed best on the current benchmark and is therefore used as the default downstream retrieval path in the UI and answer-generation workflow. Hybrid retrieval improved on text-only retrieval but did not outperform reranked-vector retrieval.
+
+**Evidence:**
+
+- `src/evaluate_retrieval.py`
+- `src/retrieve_text.py`
+- `src/retrieve_vector.py`
+- `src/retrieve_reranked.py`
+- `src/retrieve_hybrid.py`
+- `data/ground_truth_synthetic.jsonl`
+- [Evaluation notes](evaluation-notes.md)
+- [README retrieval and evaluation](../README.md#retrieval-and-evaluation)
+
+---
+
+## LLM evaluation — 2/2
+
+The project compares multiple grounded answer-generation approaches using the same synthetic ACSC question set and a consistent LLM-as-a-judge setup.
+
+The evaluated answer artefacts include:
+
+- `data/answers/answers_vector_v1.jsonl`
+- `data/answers/answers_vector_v1_judged.jsonl`
+- `data/answers/answers_vector_v2_prompt_grounded.jsonl`
+- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`
+- `data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl`
+- `data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl`
+
+The v2 prompt-grounded approach outperformed the earlier v1 answer-generation approach on the benchmark. The selected live path combines the stronger v2 grounded prompt with the strongest evaluated retriever, reranked-vector retrieval.
+
+The evaluation is synthetic and should not be interpreted as a complete measure of real-world answer quality. However, it provides a controlled, traceable comparison that informed the selected implementation.
+
+**Evidence:**
+
+- `src/generate_answers.py`
+- `src/generate_answers_v1.py`
+- `src/judge_answers.py`
+- `src/judge_answers_v1.py`
+- `src/judge_answers_v2.py`
+- `data/answers/`
+- [Evaluation notes](evaluation-notes.md)
+- [README retrieval and evaluation](../README.md#retrieval-and-evaluation)
+
+---
+
+## Interface — 2/2
+
+The project provides both command-line workflows and a deployed Streamlit UI.
+
+The Streamlit application in `app.py` provides:
+
+- **AI Navigator** for asking ACSC AI security questions
+- Optional organisation-size and role filters
+- Reranked-vector retrieval
+- V2 prompt-grounded answers
+- A source-evidence panel containing chunk IDs, document titles, headings, audience tags, and retrieval metadata
+- **Monitoring Dashboard** for interaction telemetry and feedback analysis
+
+**Evidence:**
+
+- `app.py`
+- `.streamlit/config.toml`
+- [Live Streamlit application](http://54.167.24.156:8501/)
+- [README interactive UI and monitoring](../README.md#interactive-ui-and-monitoring)
+- [Runbook reviewer verification path](runbook.md#reviewer-verification-path)
+
+---
+
+## Ingestion pipeline — 1/2
+
+The ingestion pipeline is semi-automated and reproducible:
+
+1. A manifest defines the ACSC source documents and associated audience metadata.
+2. Scripts download HTML and PDF sources.
+3. Scripts extract source text into Markdown.
+4. Extracted Markdown is manually reviewed and cleaned.
+5. A reviewed corpus snapshot is preserved under `data/corpus_snapshots/`.
+6. Scripts create chunks, initialise PostgreSQL, load chunks, and build embeddings.
+
+This is stronger than a manual one-off workflow because ingestion and index creation are largely scripted. However, it does not use a dedicated orchestrator, and a manual review checkpoint remains intentionally part of the process. It is therefore assessed as 1/2.
+
+**Evidence:**
+
+- `data/source_manifest_core.csv`
+- `src/download_sources.py`
+- `src/extract_text_html.py`
+- `src/extract_text_pdf.py`
+- `src/prepare_chunks.py`
+- `src/db_init.py`
+- `src/db_load_chunks.py`
+- `src/db_build_embeddings.py`
+- [Dataset notes](dataset-notes.md)
+- [Runbook](runbook.md)
+
+---
+
+## Monitoring — 2/2
+
+The Streamlit application includes both user-feedback collection and a monitoring dashboard with at least five charts.
+
+Each interaction is written to PostgreSQL in a `conversations` table, including the question, answer, model, audience filters, token counts, latency, estimated cost, and timestamp. A separate `feedback` table records thumbs-up and thumbs-down feedback per conversation.
+
+The Monitoring Dashboard includes:
+
+- Summary metrics for conversation count, latency, estimated cost, and feedback
+- Response-time chart
+- Cost-per-query chart
+- Token-usage chart
+- Conversations-over-time chart
+- Queries-by-organisation-size chart
+- Queries-by-role chart
+- Recent-conversations table
+
+**Evidence:**
+
+- `app.py`
+- `conversations` PostgreSQL table
+- `feedback` PostgreSQL table
+- [Live Monitoring Dashboard](http://54.167.24.156:8501/)
+- [README interactive UI and monitoring](../README.md#interactive-ui-and-monitoring)
+- [Runbook reviewer verification path](runbook.md#reviewer-verification-path)
+
+---
+
+## Containerization — 2/2
+
+The complete application runtime is defined through Docker Compose.
+
+The Compose configuration includes:
+
+- `postgres` — PostgreSQL with pgvector
+- `bootstrap` — one-off schema initialisation, chunk loading, and embedding generation
+- `app` — Streamlit application service
+
+The repository also includes a `Dockerfile` for the application image, named volumes for PostgreSQL and model caching, health checks, and Docker ignore rules.
+
+The same Docker Compose approach is used locally and on the lightweight EC2 deployment.
+
+**Evidence:**
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `.dockerignore`
+- [Runbook Docker and deployment instructions](runbook.md)
+- [README interactive UI and monitoring](../README.md#interactive-ui-and-monitoring)
+
+---
+
+## Reproducibility — 2/2
+
+The project provides clear reproduction paths from a clean checkout.
+
+Reproducibility support includes:
+
+- Public ACSC source URLs defined in `data/source_manifest_core.csv`
+- A reviewed Markdown corpus snapshot for strict baseline reproduction
+- A fresh source-download and extraction path
+- Pinned Python dependencies in `pyproject.toml` and `uv.lock`
+- Documented `uv` commands for the local workflow
+- A Docker Compose runtime for the database, bootstrap process, and application
+- A committed Streamlit configuration
+- Step-by-step setup, evaluation, reset, and deployment instructions
+
+A reviewer can either use the live deployed app for quick verification or follow the runbook to reproduce the corpus, index, retrieval evaluation, and local UI runtime.
+
+**Evidence:**
+
+- [README setup](../README.md#setup)
+- [README usage](../README.md#usage)
+- [Runbook](runbook.md)
+- `pyproject.toml`
+- `uv.lock`
+- `Dockerfile`
+- `docker-compose.yml`
+- `.streamlit/config.toml`
+- `data/source_manifest_core.csv`
+- `data/corpus_snapshots/v1_2026-07-25/`
 
 ---
 
 ## Bonus implementation categories
 
-- Hybrid search: combining both text and vector search, at least evaluated.
-- Document reranking.
-- User query rewriting.
-- Deployment to the cloud.
+### Hybrid search — implemented and evaluated
 
----
+Hybrid retrieval combines text and vector results through reciprocal rank fusion. It was evaluated against the same benchmark as the other retrieval backends.
 
-## Current status summary
+Hybrid retrieval improved substantially over text-only retrieval but did not outperform reranked-vector retrieval. It is retained as an evaluated alternative and debugging aid rather than being selected as the default.
 
-This table is a snapshot as of 2026-08-04 and is intended to be updated as the project evolves.
+**Evidence:**
 
-| Area | State | Notes |
-|---|---|---|
-| Problem description | Good | Clear problem, scope, and users are documented. |
-| Retrieval flow | Good | Knowledge base and retrieval backends are implemented; grounded answer-generation and judge artefacts are also present. |
-| Retrieval evaluation | Good | Text, vector, reranked vector, and hybrid retrieval are evaluated on the same benchmark; reranked vector is the current default based on evidence. |
-| LLM evaluation | Good | Two answer-generation variants were compared on the same synthetic benchmark using a consistent judge setup; v2 was selected as the stronger approach. |
-| Interface | Good | Streamlit UI with an AI Navigator tab and a Monitoring Dashboard on top of the CLI scripts. |
-| Ingestion pipeline | OK | Semi-automated ingestion with scripts plus manual cleanup; no orchestration tool yet. |
-| Monitoring | Good | User feedback is logged and a monitoring dashboard with multiple charts is available in the Streamlit app. |
-| Containerization | Good | Dockerfile, multi-service `docker-compose.yml`, containerised Postgres/pgvector backend, bootstrap service, and app service are now in place. |
-| Reproducibility | Good | Clear instructions, accessible dataset, pinned dependencies, committed Docker config, and a committed Streamlit config. |
-| Hybrid search | Good | Implemented and evaluated via reciprocal rank fusion; improves over text but not over reranked vector on the current benchmark. |
-| Document reranking | Good | Implemented via `src/retrieve_reranked.py` and now the preferred retrieval baseline. |
-| Query rewriting | OK | Implemented and evaluated, but not adopted as the default because it did not improve the frozen benchmark. |
-| Cloud deployment | Good | Lightweight EC2 deployment for reviewer access using the same Docker Compose runtime path. |
+- `src/retrieve_hybrid.py`
+- `src/evaluate_retrieval.py`
+- [Evaluation notes](evaluation-notes.md)
 
----
+### Document reranking — implemented and selected
 
-## Problem description — (Good)
+The project implements chunk reranking through `src/retrieve_reranked.py`.
 
-The project clearly explains that it aims to help Australian organisations navigate official ACSC guidance on AI security, which is spread across multiple documents and formats. The README describes the user problem, why generic AI advice is insufficient, and how a grounded RAG tool over ACSC sources addresses that gap. This matches the Good definition for this criterion. Evidence lives mainly in `README.md`, `docs/dataset-notes.md`, and `docs/decisions.md`.
+Reranked-vector retrieval outperformed text, plain vector, and hybrid alternatives on the current benchmark. It is therefore the selected default retrieval backend for the Streamlit UI and current answer-generation path.
 
-## Retrieval flow — (Good)
+**Evidence:**
 
-The project uses both a knowledge base and LLM-supported workflow components. ACSC documents are downloaded, cleaned, chunked, stored as `data/chunks/chunks.jsonl`, and loaded into a PostgreSQL `chunks` table. Retrieval scripts implement full-text search, pgvector-based dense retrieval, a reranked vector retriever, and a hybrid fusion retriever, while the LLM helper supports seed vetting, synthetic question generation, answer generation, and answer judging.
+- `src/retrieve_reranked.py`
+- `src/evaluate_retrieval.py`
+- `app.py`
+- [Evaluation notes](evaluation-notes.md)
 
-This matches the Good definition for this criterion because both a knowledge base and LLM-supported components are part of the overall system rather than direct prompting alone. Evidence is in `src/db_init.py`, `src/db_load_chunks.py`, `src/db_build_embeddings.py`, `src/retrieve_text.py`, `src/retrieve_vector.py`, `src/retrieve_reranked.py`, `src/retrieve_hybrid.py`, `src/generate_answers.py`, `src/judge_answers.py`, `src/llm_client.py`, and the corpus files.
+### User query rewriting — implemented and evaluated
 
-## Retrieval evaluation — (Good)
+Query rewriting is implemented through `src/rewrite_query.py` and was evaluated across text, vector, reranked-vector, and hybrid backends.
 
-Retrieval quality is evaluated explicitly, and multiple retrieval approaches are compared on the same synthetic benchmark. The project builds a synthetic ground-truth set and uses `src/evaluate_retrieval.py` to compare text retrieval, vector retrieval, reranked vector retrieval, and hybrid retrieval, reporting metrics such as Hit@k and MRR, both strict and relaxed.
+It was not adopted as the default because it did not improve the frozen 27-question benchmark. The helper remains available for experimentation with selective or gated rewrite strategies.
 
-Current results show that reranked vector retrieval substantially outperforms the text baseline and the plain vector baseline on the current benchmark, while simple hybrid retrieval improves over text but does not beat reranked vector. This matches the Good definition for this criterion: multiple retrieval approaches are evaluated and the best one is used. Evidence is in `src/evaluate_retrieval.py`, `src/retrieve_text.py`, `src/retrieve_vector.py`, `src/retrieve_reranked.py`, `src/retrieve_hybrid.py`, `data/ground_truth_synthetic.jsonl`, `docs/evaluation-notes.md`, and the recorded metrics.
+Not selecting rewriting as the production default reflects the evaluation result; the capability is still implemented and evaluated.
 
-## LLM evaluation — (Good)
+**Evidence:**
 
-The project includes a comparative evaluation of multiple final-answer generation approaches. Two grounded answer-generation variants were produced over the same synthetic ACSC question set: `data/answers/answers_vector_v1.jsonl` and `data/answers/answers_vector_v2_prompt_grounded.jsonl`. Both were then evaluated against gold ACSC passages using the same judging setup, producing comparable judged outputs in `data/answers/answers_vector_v1_judged.jsonl` and `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`.
+- `src/rewrite_query.py`
+- `src/evaluate_retrieval.py`
+- [Evaluation notes](evaluation-notes.md)
+- [Decision D-015](decisions.md)
 
-On the current 27-question benchmark, answer-generation v2 outperformed v1, achieving 26/27 `good` answers (96.3%) versus 22/27 `good` answers (81.5%) for v1. The main observed advantage of v2 was better retention of named resources, frameworks, and actionable multi-step guidance, whereas v1 more often over-summarised and replaced concrete ACSC guidance with generic wording.
+### Cloud deployment — implemented
 
-This matches the Good definition for this criterion: multiple final-output approaches were evaluated and the better one was selected. Evidence is in `src/generate_answers.py`, `src/generate_answers_v1.py`, `src/judge_answers.py`, `src/judge_answers_v1.py`, `src/judge_answers_v2.py`, `data/answers/answers_vector_v1.jsonl`, `data/answers/answers_vector_v1_judged.jsonl`, `data/answers/answers_vector_v2_prompt_grounded.jsonl`, `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`, and `docs/evaluation-notes.md`.
+The project is deployed to a lightweight Ubuntu-based AWS EC2 instance for reviewer access.
 
-## Interface — (Good)
-
-The project now includes both CLI-based workflows and a user-facing UI. Scripts under `src/` support download, extraction, chunking, evaluation, and answer generation and judging. On top of this, `app.py` exposes a Streamlit web application with:
-
-- an **AI Navigator** tab for interactive questions, audience filters, reranked vector retrieval, and v2 prompt-grounded answers, and
-- a **Monitoring Dashboard** tab for metrics, charts, and recent conversations.
-
-This matches the Good definition for this criterion: there is a UI (Streamlit) in addition to scripts. Evidence is in `app.py`, `.streamlit/config.toml`, `README.md`, and `docs/runbook.md`.
-
-## Ingestion pipeline — (OK)
-
-The ingestion pipeline is semi-automated and clearly documented. A manifest defines sources; scripts handle downloading and extraction for HTML and PDFs; manual cleanup improves the processed Markdown; chunk preparation, database loading, and embedding generation are scripted.
-
-This matches the OK definition for this criterion: ingestion is substantially implemented and reusable, but it is still script-based rather than orchestrated through a dedicated workflow tool. Evidence is in `src/download_sources.py`, `src/extract_text_html.py`, `src/extract_text_pdf.py`, `src/prepare_chunks.py`, `docs/runbook.md`, and `docs/dataset-notes.md`.
-
-## Monitoring — (Good)
-
-Monitoring is present in the form of feedback collection and a dashboard with multiple charts:
-
-- The Streamlit app logs each interaction into a `conversations` table, including question, answer, model, audience filters, tokens, latency, estimated cost, and timestamp.
-- A `feedback` table records thumbs-up / thumbs-down scores per conversation.
-- The Monitoring Dashboard tab shows:
-  - summary metrics (total conversations, average latency, total estimated cost, feedback counts),
-  - charts (response time per query, cost per query, token usage per request, conversations per hour, queries by organisation size, queries by role),
-  - a recent-conversations table.
-
-This matches the Good definition for this criterion: user feedback is collected and there is a dashboard with at least five charts. Evidence is in `app.py`, the `conversations` and `feedback` tables, `README.md`, and `docs/runbook.md`.
-
-## Containerization — (Good)
-
-The project is now containerised with both an application image and a multi-service Docker Compose setup. A `Dockerfile` builds the Streamlit app image, and `docker-compose.yml` defines the full local stack with:
-
-- a `postgres` service using `pgvector/pgvector:pg17`,
-- a `bootstrap` service that initialises the schema, loads chunk records, and builds embeddings,
-- an `app` service that runs the Streamlit interface against the containerised database.
-
-The Compose setup also includes health checks, named volumes for PostgreSQL data and Hugging Face model caching, and supporting `.dockerignore` and `.gitignore` updates. This matches the Good definition for this criterion: everything needed for the containerised runtime is in Docker Compose rather than only the main app or only the dependencies. Evidence is in `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.gitignore`, `README.md`, and `docs/runbook.md`.
-
-## Reproducibility — (Good)
-
-Reproducibility is strong. The project has clear instructions on how to run the code, a manifest-defined public dataset, pinned dependency versions, a documented local `uv` workflow, and a documented Docker Compose workflow that covers the application and database runtime. The runbook also documents downloading, extraction, cleanup, chunking, indexing, evaluation, answer generation and judging, and the Streamlit UI.
-
-Someone else should be able to rebuild the corpus and rerun the retrieval evaluation from a clean checkout, then launch the Streamlit UI either locally or via Docker Compose. This matches the Good definition for this criterion: instructions are clear, the dataset is accessible, it's easy to run the code, and version information is specified.
-
-Evidence is in `docs/runbook.md`, `README.md`, `pyproject.toml`, `uv.lock`, `Dockerfile`, `docker-compose.yml`, `data/source_manifest_core.csv`, and `.streamlit/config.toml`.
-
----
-
-## Bonus categories and extras
-
-These categories are not part of any formal score here, but they are useful indicators of project maturity and future learning opportunities.
-
-### Hybrid search
-
-Hybrid search is implemented and evaluated. The project includes a simple reciprocal-rank-fusion (RRF) hybrid retriever that combines text and vector results without directly normalising their different score scales.
-
-On the current synthetic benchmark, hybrid retrieval improves substantially over text-only retrieval but does not outperform reranked vector retrieval, so it is retained as an evaluated alternative and debugging aid rather than the default retriever. Evidence is in `src/retrieve_hybrid.py`, `src/evaluate_retrieval.py`, and `docs/evaluation-notes.md`.
-
-### Document re-ranking
-
-Document or chunk reranking is now present. The current system includes `src/retrieve_reranked.py`, and the reranked vector path is the preferred retrieval baseline because it outperforms the plain vector and hybrid alternatives on the current benchmark.
-
-### User query rewriting
-
-Query rewriting is implemented and evaluated, but it is not the default because it did not improve the frozen benchmark. The rewrite helper (`src/rewrite_query.py`) was tested across all four main backends (`text`, `vector`, `vector_reranked`, `hybrid`) on the 27-question synthetic set. Rewritten variants were generally weaker or only marginally different, and the strongest backend remained `vector_reranked` without rewrite. The helper is retained as an experimental tool for possible future selective or gated strategies. Evidence is in `src/rewrite_query.py`, `src/evaluate_retrieval.py`, `docs/evaluation-notes.md`, `docs/decisions.md` (D-015), and `docs/project-log.md`.
-
-### Deployment to the cloud
-
-The project now includes a lightweight cloud deployment for reviewer access. A small Ubuntu-based AWS EC2 instance runs the same Docker Compose stack used locally:
+The instance runs the same Docker Compose stack used for local reproduction:
 
 - `postgres` service with pgvector
-- `bootstrap` service for one-off schema init, chunk load, and embedding build
-- `app` service running the Streamlit UI on port 8501
+- `bootstrap` service for schema initialisation, chunk loading, and embedding generation
+- `app` service running Streamlit on port 8501
 
-The deployment reuses the evaluated reranked-vector + v2 prompt-grounded pipeline and is intended as a demonstration environment rather than a hardened production setup. It does not yet include HTTPS, a custom domain, or managed secrets. Evidence is in `Dockerfile`, `docker-compose.yml`, `docs/runbook.md`, `docs/decisions.md` (D-016), and `docs/project-log.md`.
+The deployment is intended as a reviewer-facing demonstration environment rather than a hardened production deployment. It does not currently include HTTPS, a custom domain, or managed secrets.
 
-### Other extras
+**Evidence:**
 
-Additional notable features now include a containerised local runtime with a dedicated bootstrap service, a committed Streamlit runtime configuration, and lightweight monitoring over the interactive path.
+- [Live deployed application](http://54.167.24.156:8501/)
+- `Dockerfile`
+- `docker-compose.yml`
+- [Runbook EC2 deployment instructions](runbook.md)
+- [Decision D-016](decisions.md)
 
 ---
 
-## Strongest areas and gaps
+## Strengths
 
-**Strongest areas right now:**
+The strongest parts of the project are currently:
 
-- Problem description (Good)
-- Retrieval flow (Good)
-- Retrieval evaluation (Good)
-- LLM evaluation (Good)
-- Interface (Good)
-- Monitoring (Good)
-- Containerization (Good)
-- Reproducibility (Good)
-- Cloud deployment (Good)
+- A clearly scoped and well-documented problem
+- A real knowledge-base-plus-LLM RAG flow rather than direct prompting
+- Comparative retrieval evaluation across four backends
+- Comparative answer-generation evaluation with judge artefacts
+- Selected defaults based on recorded benchmark results
+- A deployed Streamlit interface with inspectable evidence
+- Feedback collection and a monitoring dashboard with more than five charts
+- Full Docker Compose runtime coverage
+- Reproducible local and cloud deployment documentation
 
-**Clear gaps and next areas to improve:**
+---
 
-- Ingestion pipeline orchestration is still OK rather than Good
-- Query rewriting is implemented but intentionally not adopted as default
-- Docker usage and reset paths should remain clearly documented so a reviewer can follow them without guesswork
+## Remaining gaps
+
+The main remaining limitations are:
+
+- The ingestion workflow is script-based rather than orchestrated through a dedicated workflow platform.
+- The benchmark is synthetic and relatively small, so results should not be interpreted as broad real-world performance claims.
+- Query rewriting is implemented but did not improve the current benchmark and is not part of the default path.
+- The EC2 deployment is intentionally lightweight and lacks production hardening such as HTTPS, a custom domain, and managed secrets.
 
 ---
 
 ## Next steps
 
-These priorities are chosen to improve project quality, maintainability, and learning value.
+Potential next improvements are:
 
-- **Ingestion pipeline maturity**: Consider a lightweight orchestrator or single entry script that sequences the main ingestion and evaluation steps for easier reuse.
-- **Targeted retrieval enhancements**: Explore small, evaluation-friendly changes such as gated query rewriting or additional reranking experiments, evaluated against the existing synthetic benchmark.
-- **Optional deployment hardening**: If time permits, explore minimal hardening of the EC2 deployment (HTTPS, custom domain, managed secrets) as a bonus, without overcomplicating the core project.
-- **Container refinement**: Keep Docker usage clearly documented in `README.md` and `docs/runbook.md`, including first-time bootstrap, normal restart, and full reset paths.
+- Add a lightweight orchestration layer or a single high-level pipeline command for ingestion and evaluation.
+- Expand evaluation with more diverse or human-authored questions while preserving a held-out test set.
+- Investigate selective query rewriting or additional reranking variants only when evaluated against the existing benchmark.
+- Add optional deployment hardening, such as HTTPS, a custom domain, and managed secret handling, if needed after assessment.
+- Maintain clear Docker documentation for first-time bootstrap, normal restart, and full-reset workflows.
 
-This document is intended to evolve as those areas are implemented; the criterion definitions stay fixed, but the current states and notes for each area can be updated over time.
+This document should be updated when the implementation or evidence changes. The criterion definitions should remain stable so changes in project maturity are easy to track.
