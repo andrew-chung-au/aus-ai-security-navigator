@@ -1,8 +1,8 @@
 # Runbook
 
-This project is designed so another person can recreate the Python environment, rebuild the ACSC corpus and PostgreSQL retrieval index, regenerate or reuse evaluation artefacts, rerun comparative retrieval evaluation, and launch the interactive app from a clean checkout.
+This project is designed so another person can recreate the Python environment, rebuild the ACSC corpus and PostgreSQL retrieval index, regenerate or reuse evaluation artefacts, rerun comparative retrieval evaluation, launch the interactive app locally, and reproduce the lightweight cloud deployment used for reviewer access.
 
-The workflow combines manifest-defined source ingestion, scripted transformations, documented manual checkpoints, and versioned generated artefacts. This document focuses on environment, inputs, execution steps, manual checkpoints, and outputs rather than re-explaining the project rationale.
+The workflow combines manifest-defined source ingestion, scripted transformations, documented manual checkpoints, versioned generated artefacts, a Docker Compose runtime path, and a small AWS EC2 deployment for live demonstration. This document focuses on environment, inputs, execution steps, manual checkpoints, deployment steps, and outputs rather than re-explaining the project rationale.
 
 ---
 
@@ -156,10 +156,10 @@ has already completed and `DATABASE_URL` is configured.
 
 This project supports two related, but distinct, workflows:
 
-1. **Strict v1 baseline reproduction**
+1. **Strict v1 baseline reproduction**  
    Restore the reviewed Markdown snapshot, then rebuild chunks, the PostgreSQL index, embeddings, and retrieval metrics. Use this path to reproduce the current evaluated corpus and retrieval baseline.
 
-2. **Fresh corpus rebuild**
+2. **Fresh corpus rebuild**  
    Download current ACSC sources, extract them, manually review the generated Markdown, and create a new reviewed corpus snapshot before rebuilding downstream artefacts. Use this path when intentionally updating the corpus.
 
 Do not treat a fresh download and extraction as equivalent to strict v1 reproduction, because ACSC source documents, extraction outputs, and semi-manual Markdown cleanup may differ.
@@ -396,7 +396,7 @@ Output records include:
 
 ### 3.9 Vet seed passages
 
-Vet matched seed passages with the project’s LLM-assisted seed-review workflow.
+Vet matched seed passages with the project's LLM-assisted seed-review workflow.
 
 The vetting process uses the selected `candidate_chunk` and records whether the passage is appropriate for synthetic question generation. The output is:
 
@@ -592,6 +592,14 @@ Audience semantics are consistent across retrievers:
 - a requested role returns chunks containing that role in `role_audience_tags`
 - no filter returns eligible chunks without applying the corresponding audience constraint
 
+Query rewriting helper (experimental):
+
+```bash
+uv run python src/rewrite_query.py "your query"
+```
+
+This helper rewrites a user query into a single retrieval-friendly query while preserving audience constraints and expanding vague wording. The rewritten query can then be passed to any of the retrieval helpers above. Query rewriting was evaluated on the frozen 27-question benchmark but did not improve the best-performing backend, so it is not used by the default UI or evaluation path and should be treated as an experimental tool.
+
 ### 3.15 Run comparative retrieval evaluation
 
 Evaluate text, vector, reranked vector, and hybrid retrieval against the same synthetic question set:
@@ -627,6 +635,8 @@ Relaxed metrics allow partial relevance where a retrieved chunk shares:
 - the same leaf heading, meaning the final element of `heading_path`
 
 The evaluator prints a backend-specific metric summary so results can be compared under the same corpus, question set, audience metadata, and relevance rules.
+
+The evaluator focuses on the four main backends (`text`, `vector`, `vector_reranked`, `hybrid`). Rewritten variants (`text_rewritten`, `vector_rewritten`, `vector_reranked_rewritten`, `hybrid_rewritten`) were also implemented and compared in project experiments, but they are not part of the primary metric summary reported here. They remain available for inspection and future selective-rewrite experiments.
 
 ### 3.16 Export retrieval debug records
 
@@ -692,19 +702,15 @@ On the current benchmark:
 - hybrid reciprocal-rank fusion improves on text retrieval
 - vector retrieval is strong
 - reranked vector retrieval is the strongest-performing backend
-- query rewriting was also tested, but it did not improve the benchmark, so it remains experimental rather than a default retrieval step
+- query rewriting was evaluated across all four main backends (`text`, `vector`, `vector_reranked`, `hybrid`) using a dedicated LLM-based rewrite helper (`src/rewrite_query.py`). On the frozen 27-question synthetic benchmark, rewritten variants did not improve the best-performing backend and generally reduced strict metrics or produced only marginal differences. The strongest overall backend remains `vector_reranked` without rewrite.
 
-Accordingly, `src/retrieve_reranked.py` is the preferred retrieval baseline for the first answer-generation stage.
-
-Plain vector retrieval, text retrieval, hybrid retrieval, and rewrite-enabled variants remain available as reproducible comparison and debugging backends. Any future query rewriting, hybrid weighting, embedding-model change, or reranking change should be evaluated against the current reranked-vector baseline rather than assumed to be an improvement.
+Accordingly, `src/retrieve_reranked.py` is the preferred retrieval baseline for the first answer-generation stage. Plain vector retrieval, text retrieval, hybrid retrieval, and rewrite-enabled variants remain available as reproducible comparison and debugging backends. Any future query rewriting, hybrid weighting, embedding-model change, or reranking change should be evaluated against the current reranked-vector baseline rather than assumed to be an improvement. Query rewriting is explicitly treated as an experimental helper, not part of the default retrieval path.
 
 ### 3.18 Vector-based answer generation and LLM-as-judge evaluation
 
 In addition to retrieval evaluation, the project preserves a derived answer-generation and judge layer that operates on the existing retrieval corpus and synthetic question set.
 
-The answer-generation pipeline has evolved alongside the retrieval baselines. Earlier answer artefacts were generated using plain vector retrieval to fairly compare prompt variants. The current default answer-generation path uses the reranked vector retrieval backend together with the v2 prompt-grounded strategy.
-
----
+The answer-generation pipeline has evolved alongside the retrieval baselines. Earlier answer artefacts were generated using plain vector retrieval to fairly compare prompt variants. The current default answer-generation path uses the reranked vector retrieval backend together with the v2 prompt-grounded strategy. All answer-generation experiments and the current default path use non-rewritten retrieval queries, consistent with the decision not to adopt query rewriting as the default retrieval step.
 
 #### 3.18.1 Generate grounded answers (reranked vector + v2 prompt)
 
@@ -757,8 +763,6 @@ Each record in `answers_vector_reranked_v2_prompt_grounded.jsonl` typically incl
 - `grounded`
 - `model_id`, `top_k`, and `usage` diagnostics
 
----
-
 #### 3.18.2 Judge answers against gold passages
 
 Evaluate the generated answers against their gold passages using the project's fixed judge pipeline:
@@ -810,8 +814,6 @@ Each judged record extends the original answer fields with:
 
 These should be treated as historical reference points tied to their respective answer-generation variants.
 
----
-
 #### 3.18.3 Preserved script versions
 
 Earlier scripts for this stage are preserved for provenance and comparison, including:
@@ -826,21 +828,19 @@ These files, together with the v1 and v2 JSONL outputs, document the progression
 
 The current `src/generate_answers.py` has been updated to use reranked vector retrieval (`retrieve_reranked.py`) and writes to the new `answers_vector_reranked_v2_prompt_grounded.jsonl` artefact. Earlier answer-generation behaviour can be inspected in the preserved scripts if needed.
 
----
-
 #### 3.18.4 Optional analysis outputs
 
 Aggregations over the judged files, such as the proportion of `good` answers by `target_size`, `target_role`, or `source_id`, can be computed in separate analysis scripts and regenerated as needed. These are derived outputs and are not treated as primary corpus artefacts.
 
 When comparing across answer-generation variants, treat the plain-vector artefacts (`answers_vector_v1*` and `answers_vector_v2_prompt_grounded*`) as frozen baselines, and the reranked-vector artefacts (`answers_vector_reranked_v2_prompt_grounded*`) as the current default for evaluation and comparison.
 
-### 3.19 Interactive Streamlit UI and monitoring
+### 3.19 Interactive Streamlit UI, Docker runtime, and EC2 deployment
 
-In addition to CLI scripts and notebooks used for evaluation, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer. This interactive application is deployed via Docker Compose to ensure a reproducible runtime environment.
+In addition to CLI scripts and notebooks used for evaluation, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer. The same Docker Compose runtime path is used both for local execution and for the lightweight EC2 deployment used to provide live reviewer access.
 
 #### 3.19.1 First-time application bootstrap
 
-From the project root, use the dedicated `bootstrap` container to initialize the database, load the chunk text, and build the pgvector embeddings.
+From the project root, the standard reproducible runtime path for the application uses Docker Compose. This same Compose-based setup is used both for local execution and for the lightweight EC2 deployment used to provide live reviewer access.
 
 1. **Start the database:**
    ```bash
@@ -921,6 +921,46 @@ Another practitioner can therefore:
 3. Start the app via Docker Compose (`docker compose up -d app`).
 4. Interact with the AI Navigator knowing it is backed by the exact same reproducible reranked-vector and v2 prompt-grounded pipeline.
 
+The live app uses the same non-rewritten reranked-vector retrieval path selected by evaluation; rewrite-enabled retrieval variants remain available only for offline experimentation and debugging.
+
+#### 3.19.5 Lightweight EC2 deployment
+
+For reviewer-facing demonstration, the application was also deployed to a small Ubuntu-based AWS EC2 instance using the same Docker Compose runtime path.
+
+Typical deployment steps were:
+
+1. Provision a small EC2 instance and allow inbound:
+   - SSH
+   - TCP 8501 for Streamlit
+
+2. Install Docker and Docker Compose on the instance.
+
+3. Clone the repository and create a `.env` file with the required secrets and database configuration.
+
+4. Start the database service:
+   ```bash
+   docker compose up -d postgres
+   ```
+
+5. Run the one-off bootstrap service:
+   ```bash
+   docker compose run --rm bootstrap
+   ```
+
+6. Start the Streamlit app service:
+   ```bash
+   docker compose up -d app
+   ```
+
+7. Access the application at:
+   ```text
+   http://<EC2_PUBLIC_IP>:8501
+   ```
+
+During deployment, the small instance required temporary swap to handle memory spikes during build and bootstrap, and the root EBS volume was increased from 20 GB to 30 GB to accommodate Docker build cache and model downloads.
+
+This deployment is intended as a lightweight demonstration environment rather than a production architecture. It reuses the same evaluated reranked-vector + v2 prompt-grounded pipeline, but does not yet add production hardening such as HTTPS, a custom domain, or managed secrets.
+
 ---
 
 ## 4. Outputs
@@ -991,6 +1031,8 @@ data/answers/answers_vector_v1.jsonl
 data/answers/answers_vector_v1_judged.jsonl
 data/answers/answers_vector_v2_prompt_grounded.jsonl
 data/answers/answers_vector_v2_prompt_grounded_judged.jsonl
+data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl
+data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl
 ```
 
 ### Monitoring tables and logs
@@ -1002,16 +1044,27 @@ PostgreSQL feedback table
 
 These tables store conversation-level metrics and thumbs-up or thumbs-down feedback for the interactive app, and are derived from, but do not modify, the underlying corpus and evaluation artefacts.
 
-### Interactive UI
+### Interactive UI and runtime artefacts
 
 ```text
 app.py  (Streamlit AI Navigator and Monitoring Dashboard)
 .streamlit/config.toml
 docker-compose.yml
 Dockerfile
+.env.example
 ```
 
 These files provide the optional Streamlit interface over the reranked vector and v2 prompt-grounded answer-generation path, plus a lightweight monitoring dashboard backed by the `conversations` and `feedback` tables.
+
+### Cloud deployment state
+
+```text
+AWS EC2 instance running the Docker Compose application stack
+Public Streamlit endpoint on port 8501
+PostgreSQL + pgvector running in the Compose-managed database container
+```
+
+This deployment is operational state rather than a committed repository artefact.
 
 ---
 
@@ -1035,6 +1088,8 @@ From a clean clone, a reviewer can:
 12. Export per-question debug records to inspect backend-specific rankings, scores, relevance labels, and audience context.
 13. Reproduce the selected reranked-vector retrieval baseline, and rerun the derived answer-generation and judge stage using the preserved v1 and v2 answer artefacts and scripts.
 14. Launch the interactive application using Docker Compose, executing the containerized bootstrap sequence (`docker compose up -d postgres`, `docker compose run --rm bootstrap`, `docker compose up -d app`).
-15. Interact with the Streamlit AI Navigator and reproduce the lightweight monitoring views using local demo traffic via `http://localhost:8501`.
+15. Interact with the Streamlit AI Navigator and Monitoring Dashboard locally via `http://localhost:8501`.
+16. Reproduce the lightweight reviewer-facing deployment on a small AWS EC2 instance using the same Docker Compose runtime path, including bootstrap and app startup.
+17. Verify that the deployed app exposes the same reranked-vector retrieval and v2 prompt-grounded answer-generation path selected by evaluation, rather than a separate ad hoc configuration.
 
-This runbook intentionally treats the evaluated retrieval baseline as the core reproducible path. The grounded answer-generation and judge layer, and the interactive Streamlit UI with monitoring, are derived stages built on top of the existing retrieval artefacts and can be rerun separately using the preserved v1 and v2 outputs, scripts, Docker Compose configurations, and `.streamlit/config.toml`.
+This runbook intentionally treats the evaluated retrieval baseline as the core reproducible path. The grounded answer-generation and judge layer, and the interactive Streamlit UI with monitoring, are derived stages built on top of the existing retrieval artefacts and can be rerun separately using the preserved v1 and v2 outputs, scripts, Docker Compose configurations, `.streamlit/config.toml`, and the EC2 deployment steps described above.

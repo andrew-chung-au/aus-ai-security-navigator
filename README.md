@@ -8,7 +8,8 @@ The project includes:
 - evaluated text, vector, reranked vector, and hybrid retrieval
 - evaluated answer-generation variants with an LLM-as-a-judge layer
 - an interactive Streamlit UI with a monitoring dashboard
-- a reproducible runbook and rubric-based self-assessment
+- a reproducible runbook, Docker Compose runtime, and lightweight EC2 deployment for reviewer access
+- rubric-based self-assessment and decision records
 
 ---
 
@@ -49,7 +50,7 @@ For strict reproduction of the current corpus, restore the reviewed Markdown sna
 Project structure, design rationale, evaluation, and reproducible execution are intentionally split across a small set of focused documents:
 
 - `docs/dataset-notes.md` — corpus description, chunking approach, audience model, and evaluation-data design
-- `docs/runbook.md` — step-by-step runbook for rebuilding the corpus, evaluation data, retrieval index, and optional answer-generation/judge artefacts from a clean checkout
+- `docs/runbook.md` — step-by-step runbook for rebuilding the corpus, evaluation data, retrieval index, and optional answer-generation/judge artefacts from a clean checkout, including Docker Compose runtime and EC2 deployment
 - `docs/evaluation-notes.md` — retrieval and answer-generation evaluation setup, metrics, and key findings
 - `docs/decisions.md` — accepted architectural and pipeline decisions
 - `docs/project-log.md` — chronological implementation history and major changes
@@ -96,7 +97,7 @@ Retrieval is evaluated across multiple backends:
 - reranked vector retrieval
 - hybrid retrieval
 
-On the current benchmark, reranked vector retrieval is the preferred default for downstream RAG flows. Query rewriting is treated as an experimental retrieval enhancement rather than an active default stage in the README-described pipeline.
+On the current 27-question synthetic benchmark, reranked vector retrieval is the strongest-performing backend and is used as the default for downstream RAG flows and the interactive UI. Query rewriting was evaluated across all four main backends but did not improve retrieval on this benchmark; it is retained as an experimental helper only and is not part of the default pipeline.
 
 For the detailed seed-matching workflow, matching heuristics, and evaluation-data structure, see:
 
@@ -128,7 +129,7 @@ At a high level, the project workflow is:
 11. Build the PostgreSQL retrieval index, including full-text and pgvector support.
 12. Run text, vector, reranked vector, and hybrid retrieval plus retrieval evaluation.
 13. Optionally generate grounded answers and judge them against gold passages.
-14. Add the application or interface layer, such as the Streamlit UI and monitoring dashboard.
+14. Expose the evaluated default path through the Streamlit UI and monitoring dashboard, with a reproducible Docker Compose runtime and optional EC2 deployment for reviewer access.
 
 Scripts perform downloading, extraction, chunk preparation, deterministic seed matching, question generation, database loading, embedding generation, retrieval, evaluation, and optional answer-generation/judge workflows. For the full executable runbook, see `docs/runbook.md`.
 
@@ -214,7 +215,7 @@ Create a local `.env` file in the project root:
 DATABASE_URL=postgresql://<user>:<password>@localhost:<port>/<database>
 ```
 
-For the complete environment and pipeline runbook, see `docs/runbook.md`.
+For the complete environment and pipeline runbook, including Docker Compose and EC2 deployment, see `docs/runbook.md`.
 
 ---
 
@@ -281,8 +282,9 @@ uv run python src/retrieve_text.py "your query"
 uv run python src/retrieve_vector.py "your query"
 uv run python src/retrieve_reranked.py "your query"
 uv run python src/retrieve_hybrid.py "your query"
-uv run python src/retrieve_rewritten.py "your query"   # experimental
 ```
+
+Query rewriting is available as an experimental helper via `src/rewrite_query.py`, but rewritten retrieval variants are not part of the default pipeline documented here.
 
 7. Optional answer generation and judging:
 
@@ -295,7 +297,7 @@ uv run python src/judge_answers.py
 
 ## Interactive UI and monitoring
 
-In addition to CLI scripts and evaluation workflows, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer.
+In addition to CLI scripts and evaluation workflows, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer. The same Docker Compose runtime is used both locally and in a small EC2 deployment for reviewer access.
 
 ### Local app run
 
@@ -307,7 +309,7 @@ uv run python -m streamlit run app.py
 
 ### Docker Compose run
 
-The project also supports a containerised runtime with Docker Compose:
+The project supports a containerised runtime with Docker Compose:
 
 ```bash
 docker compose up -d postgres
@@ -334,7 +336,7 @@ The app logs to PostgreSQL tables:
 - `conversations` — per-interaction telemetry (question, answer, model, audience filters, tokens, latency, cost, timestamp)
 - `feedback` — per-conversation thumbs-up / thumbs-down feedback
 
-These tables support monitoring and analysis but do not modify the underlying corpus, evaluation data, or answer artefacts. See `docs/runbook.md` for details.
+These tables support monitoring and analysis but do not modify the underlying corpus, evaluation data, or answer artefacts. See `docs/runbook.md` for details, including the EC2 deployment steps.
 
 ---
 
@@ -353,7 +355,7 @@ This project is designed to be reproducible from a clean checkout:
 - Synthetic questions are generated from vetted seed passages and stored for later evaluation.
 - A PostgreSQL-backed retrieval index supports text, vector, reranked vector, and hybrid retrieval over the same chunk corpus.
 - Answer-generation and judge annotations are preserved as derived artefacts layered on top of the retrieval and evaluation datasets.
-- An interactive UI and monitoring layer expose the evaluated default path.
+- An interactive UI and monitoring layer expose the evaluated default path, with a reproducible Docker Compose runtime and a lightweight EC2 deployment for reviewer access.
 
 For the course / rubric mapping:
 
@@ -385,13 +387,15 @@ The project currently includes:
   - a frozen plain-vector v2 baseline (`answers_vector_v2_prompt_grounded.jsonl`)
   - a new reranked-vector v2 artefact (`answers_vector_reranked_v2_prompt_grounded.jsonl`)
 - a selected default path: reranked vector retrieval + v2 prompt-grounded answers (with the new answer artefact)
-- a Streamlit-based interactive UI and monitoring dashboard
+- a Streamlit-based interactive UI and monitoring dashboard, with:
+  - a Docker Compose runtime for local and reproducible execution
+  - a lightweight EC2 deployment for live reviewer access
 - conversation and feedback logging into PostgreSQL
 
 Planned work includes:
 
-- formal benchmark evaluation of experimental retrieval paths (e.g. query rewriting, additional reranking variants) against the existing synthetic set
-- future cloud deployment once the local evaluation baseline and documentation are stable
+- formal benchmark evaluation of experimental retrieval paths (e.g. additional reranking variants, selective or gated query rewriting) against the existing synthetic set
+- potential production hardening of the cloud deployment (HTTPS, custom domain, managed secrets) if needed beyond the assessment period
 
 ---
 

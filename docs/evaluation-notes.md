@@ -109,7 +109,7 @@ An optional `--debug-output` parameter writes per-question, per-backend debug re
 On the current 27-question synthetic benchmark:
 
 - **Text retrieval**:
-  - After loosening the full-text condition to “rank then filter on `score > 0`”, strict Hit@k and MRR are non-zero (strict Hit@5: ~0.259, strict MRR: ~0.099, relaxed Hit@10: ~0.259, relaxed MRR: ~0.099).
+  - After loosening the full-text condition to "rank then filter on `score > 0`", strict Hit@k and MRR are non-zero (strict Hit@5: ~0.259, strict MRR: ~0.099, relaxed Hit@10: ~0.259, relaxed MRR: ~0.099).
   - However, text retrieval still struggles with long, conversational questions and nuanced AI-security phrasing.
   - Rewriting does not improve text retrieval on this benchmark and reduces both strict and relaxed scores.
 
@@ -138,6 +138,12 @@ On the current 27-question synthetic benchmark:
   - The strongest observed backend remains `vector_reranked` without rewrite.
   - This suggests the benchmark corpus is already well matched by semantic retrieval, and prompt-only rewriting introduces enough drift to reduce lexical alignment and precision.
 
+- **Query rewriting experiment (overall conclusion)**:
+  - A dedicated LLM-based query rewrite helper (`src/rewrite_query.py`) was added and evaluated across all four main backends (`text`, `vector`, `vector_reranked`, `hybrid`).
+  - On the frozen 27-question synthetic benchmark, rewriting did not improve the best-performing backend and generally reduced strict metrics or produced only marginal differences.
+  - The strongest overall backend remains `vector_reranked` without rewrite.
+  - As a result, query rewriting is treated as an experimental tool, not part of the default retrieval path. It is retained for future selective or gated strategies (e.g. only for clearly vague or underspecified queries).
+
 Given this evidence, the project treats **vector-reranked retrieval without query rewriting** as the current default backend for both evaluation and the interactive application. Text, vector, hybrid, and rewritten variants remain available as evaluated baselines and debugging tools.
 
 ---
@@ -145,7 +151,9 @@ Given this evidence, the project treats **vector-reranked retrieval without quer
 ## 3. Answer-generation evaluation
 
 > **Note on Retrieval Baseline for Answer Generation:** 
-> The prompt A/B test (v1 vs. v2) was conducted and frozen using the plain `vector` retrieval baseline to ensure a strictly controlled comparison. The project has since adopted `vector_reranked` as the superior default retrieval backend for the live Streamlit UI and for new answer-generation runs. The static evaluation artifacts (`answers_vector_v1...` and `answers_vector_v2_prompt_grounded...`) are intentionally preserved to document the prompt engineering experiment, while a new reranked-vector v2 answer set and judged output have been generated using the updated `generate_answers.py` and `judge_answers.py` scripts.
+> The prompt A/B test (v1 vs. v2) was conducted and frozen using the plain `vector` retrieval baseline to ensure a strictly controlled comparison. The project has since adopted `vector_reranked` as the superior default retrieval backend for the live Streamlit UI and for new answer-generation runs. The static evaluation artifacts (`answers_vector_v1...` and `answers_vector_v2_prompt_grounded...`) are intentionally preserved to document the prompt engineering experiment, while a new reranked-vector v2 answer set and judged output have been generated using the updated generate_answers.py and judge_answers.py scripts. All answer-generation experiments use non-rewritten retrieval, consistent with the decision not to adopt query rewriting as the default.
+
+
 
 ### 3.1 Setup
 
