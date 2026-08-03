@@ -16,7 +16,18 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Heavy data folders
 data/raw/
 data/processed/
 data/answers/
+data/corpus_snapshots/
+
+# Offline evaluation & metadata
 data/eval_retrieval_debug.jsonl
+data/ground_truth_*
+data/seed_*
+data/download_metadata.json
+
+# Documentation
+docs/
+*.md

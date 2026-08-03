@@ -1,6 +1,6 @@
 # Dataset notes
 
-This document is a **living snapshot** of the project’s dataset and how it is currently structured, chunked, and used for retrieval and evaluation. It is not a changelog: whenever the corpus, schema, retrieval approach, or evaluation defaults change, this file should be updated in place so that it always describes the latest state a new practitioner will see from a fresh clone.
+This document is a **living snapshot** of the project's dataset and how it is currently structured, chunked, and used for retrieval and evaluation. It is not a changelog: whenever the corpus, schema, retrieval approach, or evaluation defaults change, this file should be updated in place so that it always describes the latest state a new practitioner will see from a fresh clone.
 
 ---
 
@@ -176,16 +176,16 @@ This preserves the granularity of enumerated guidance and supports seed–chunk 
 
 ### Risk and mitigation pairings
 
-Some documents use repeated patterns where a risk heading is followed by a mitigation or “Managing risks” subsection. These are treated as a single logical unit where possible so that the problem and the recommended response remain together.
+Some documents use repeated patterns where a risk heading is followed by a mitigation or "Managing risks" subsection. These are treated as a single logical unit where possible so that the problem and the recommended response remain together.
 
 Examples include:
 
-- `ai-small-business.md` – risk sections paired with “Managing risks”
+- `ai-small-business.md` – risk sections paired with "Managing risks"
 - `ai-data-security.md` – risk headings paired with mitigation content
 - `engaging-with-ai.md` – threat or risk sections paired with case studies or response guidance
 - `agentic-ai-adoption.md` – security domains paired with scenario examples and recommended best practices
 
-Keeping these pairings intact improves retrieval and answer grounding for evaluation questions that ask both “what is the risk?” and “what should we do about it?”
+Keeping these pairings intact improves retrieval and answer grounding for evaluation questions that ask both "what is the risk?" and "what should we do about it?"
 
 ### Tables
 
@@ -205,25 +205,23 @@ Examples include:
 - the glossary-style table in `ai-small-business.md`
 - condensed risk/mitigation tables in the PDF guides
 
----
-
-## Document-specific patterns
+### Document-specific patterns
 
 Some source documents have recurring structures that the chunking process preserves.
 
-### AI-enabled cyber attack PDF guides
+#### AI-enabled cyber attack PDF guides
 
-These guides are audience-segmented and are mostly structured as a document title plus time- or action-based sections. Each major section generally stays intact with its associated action bullets so that evaluation questions about “what should a medium-sized business do immediately?” map cleanly to a single chunk.
+These guides are audience-segmented and are mostly structured as a document title plus time- or action-based sections. Each major section generally stays intact with its associated action bullets so that evaluation questions about "what should a medium-sized business do immediately?" map cleanly to a single chunk.
 
-### Guidelines for secure AI system development
+#### Guidelines for secure AI system development
 
 Development life cycle phases contain related principles and action items. These remain tied to their parent phase context so that retrieval can return phase-specific guidance for queries about design, build, deployment, and operation.
 
-### Careful adoption of agentic AI services
+#### Careful adoption of agentic AI services
 
 Risk and security domains contain nested scenario examples and recommended best practices. These blocks stay grouped under the relevant parent heading where practical to support queries about specific agentic AI risks and control sets.
 
-### Artificial intelligence and machine learning: Supply chain risks and mitigations
+#### Artificial intelligence and machine learning: Supply chain risks and mitigations
 
 Domain sections contain nested risks, mitigations, and supporting material. These are chunked with their parent domain context preserved so evaluations about supply chain threats and mitigations can be grounded in complete domain blocks.
 
@@ -273,7 +271,7 @@ A curated seed manifest (`data/ground_truth_seed_draft.json`) defines the passag
 - optional `numbered_item_title_guess`
 - optional `anchor_quote`
 
-This file captures “what to test” before synthetic questions are generated and before retrieval metrics are computed.
+This file captures "what to test" before synthetic questions are generated and before retrieval metrics are computed.
 
 ### Seed matching and vetting
 
@@ -281,7 +279,7 @@ Seeds are matched deterministically to concrete chunks in `data/chunks/chunks.js
 
 The matching process gives strong precedence to numbered list items when `numbered_item_title_guess` is present, so list-item seeds resolve to the intended passage rather than a generic sibling under the same section.
 
-Matched chunks are then passed through an LLM-based vetting step. The judge decides whether each chunk should be included for evaluation, assigns a seed quality label (`high`, `medium`, `low`), and may refine the passage type based on the actual chunk content.
+Matched chunks are then passed through an LLM-based vetting step. The judge decides whether each chunk should be included for evaluation, assigns a seed quality label (high, medium, low), and may refine the passage type based on the actual chunk content.
 
 This vetting stage filters out weak, overly narrow, or off-target passages before question generation and produces a vetted seed file such as `data/ground_truth_seeds_vetted.jsonl`.
 
@@ -309,10 +307,8 @@ The dataset is exercised via a PostgreSQL-backed retrieval layer over the `chunk
 
 The baseline text retrieval helper (`src/retrieve_text.py`):
 
-- uses PostgreSQL full-text search to compute a relevance score for chunks via
-  `ts_rank(fts, websearch_to_tsquery('english', query), 1)`
-- filters results on `score > 0` rather than requiring a strict boolean match on
-  `fts @@ websearch_to_tsquery('english', query)`
+- uses PostgreSQL full-text search to compute a relevance score for chunks via `ts_rank(fts, websearch_to_tsquery('english', query), 1)`
+- filters results on `score > 0` rather than requiring a strict boolean match on `fts @@ websearch_to_tsquery('english', query)`
 - preserves optional audience filters on:
   - `size_audience_tag` (with `all_sizes` as a fallback), and
   - `role_audience_tags` (JSONB array containment)
@@ -324,7 +320,7 @@ This refactor was motivated by the observation that long, conversational questio
 
 The retrieval-ready corpus in `data/chunks/chunks.jsonl` is also used to build a dense vector index inside PostgreSQL:
 
-- a local MiniLM sentence-transformers model encodes each chunk’s embedding text into a normalised vector
+- a local MiniLM sentence-transformers model encodes each chunk's embedding text into a normalised vector
 - embeddings are written into a `chunk_embedding` pgvector column on the `chunks` table
 - query embeddings are computed with the same model and normalisation settings, and nearest-neighbour search uses cosine distance (`chunk_embedding <=> query_embedding`), with optional audience filters on `size_audience_tag` and `role_audience_tags`
 
@@ -354,20 +350,31 @@ On the current 27-question synthetic benchmark, the measured results were:
 
 On that benchmark, `vector_reranked` is the strongest retrieval backend and is treated as the preferred retrieval path for downstream RAG work. Plain vector retrieval remains the strongest non-reranked baseline, while text and hybrid remain useful comparative baselines and debugging tools. Query rewriting was also tested but did not improve the benchmark, so it remains an experimental helper rather than a default retrieval step.
 
-### Vector-based answer dataset and LLM-as-a-judge annotations
+---
+
+## Vector-based answer dataset and LLM-as-a-judge annotations
 
 The current dataset also supports a vector-based answer-generation and LLM-as-a-judge evaluation pipeline.
 
-#### Answer datasets
+### Answer datasets
 
-Ground-truth synthetic questions from `data/ground_truth_synthetic.jsonl` are answered using retrieval over the `chunks` corpus and a grounded answer-generation prompt. The project currently preserves two answer-generation outputs for comparison and provenance:
+Ground-truth synthetic questions from `data/ground_truth_synthetic.jsonl` are answered using retrieval over the chunks corpus and a grounded answer-generation prompt.
+
+The project currently preserves three answer-generation outputs for comparison and provenance:
 
 - `data/answers/answers_vector_v1.jsonl`
 - `data/answers/answers_vector_v2_prompt_grounded.jsonl`
+- `data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl`
 
-The later prompt-grounded v2 strategy is the selected answer-generation approach for the project’s current comparison story, while v1 is retained as an earlier baseline.
+These files represent different stages of the answer-generation pipeline:
 
-Each line in either file is a JSON object that typically includes:
+- `answers_vector_v1.jsonl` — earlier baseline answer-generation variant
+- `answers_vector_v2_prompt_grounded.jsonl` — plain vector retrieval + v2 prompt-grounded strategy, preserved as a frozen baseline
+- `answers_vector_reranked_v2_prompt_grounded.jsonl` — reranked vector retrieval + v2 prompt-grounded strategy, treated as the current default answer-generation artefact
+
+The reranked-vector v2 path is the selected answer-generation approach for the project's current comparison story. The earlier v1 and plain-vector v2 files are retained as frozen baselines for provenance and historical comparison.
+
+Each line in these files is a JSON object that typically includes:
 
 - `question_id`
 - `question`
@@ -382,9 +389,15 @@ Each line in either file is a JSON object that typically includes:
 - `top_k`
 - `usage`
 
-These files are derived datasets layered on top of the existing chunk corpus, seeds, and synthetic questions.
+For the reranked-vector artefact, `retrieved_chunks` may also include retrieval metadata such as:
 
-#### Judge annotations
+- `similarity`
+- `reranker_score`
+- `vector_rank`
+
+These files are derived datasets layered on top of the existing chunk corpus, seeds, and synthetic questions. When comparing answer quality across variants, treat `answers_vector_v1.jsonl` and `answers_vector_v2_prompt_grounded.jsonl` as frozen historical baselines, and treat `answers_vector_reranked_v2_prompt_grounded.jsonl` as the current default output generated by `src/generate_answers.py`.
+
+### Judge annotations
 
 To evaluate answer quality, separate judging steps run over the answer datasets and produce judged outputs. The project currently preserves two judged files:
 
@@ -404,31 +417,37 @@ Each judged record extends the original answer fields with:
 
 These annotations are evaluation artefacts layered on top of the existing dataset. They rely on stable `chunk_id` and `gold_chunk_id` labels, plus the audience metadata carried through the corpus.
 
-### Current default retrieval and answer-generation path
+---
+
+## Current default retrieval and answer-generation path
 
 For a fresh clone, the default end-to-end path for retrieval and grounded answer generation is:
 
-- **Corpus and chunking**:
-  - restore the reviewed Markdown snapshot from `data/corpus_snapshots/v1_2026-07-25/` into `data/processed/` or rerun extraction and cleanup if intentionally rebuilding,
-  - run `src/prepare_chunks.py` to regenerate `data/chunks/chunks.jsonl` with the current heading-aware, audience-aware chunking configuration.
+### Corpus and chunking
 
-- **Database and retrieval index**:
-  - run `src/db_init.py` to create the PostgreSQL schema, including `fts` and `chunk_embedding` columns and supporting indexes,
-  - run `src/db_load_chunks.py` to load `data/chunks/chunks.jsonl` into the `chunks` table,
-  - run `src/db_build_embeddings.py` to compute MiniLM embeddings and backfill the `chunk_embedding` pgvector column.
+- restore the reviewed Markdown snapshot from `data/corpus_snapshots/v1_2026-07-25/` into `data/processed/` or rerun extraction and cleanup if intentionally rebuilding,
+- run `src/prepare_chunks.py` to regenerate `data/chunks/chunks.jsonl` with the current heading-aware, audience-aware chunking configuration.
 
-- **Retrieval baseline for evaluation and UI**:
-  - use the reranked vector retriever (`src/retrieve_reranked.py`) as the **primary** retrieval backend for both:
-    - synthetic evaluation over `data/ground_truth_synthetic.jsonl`, and
-    - the interactive UI and answer-generation flows,
-  - keep the plain vector (`src/retrieve_vector.py`), text (`src/retrieve_text.py`), hybrid (`src/retrieve_hybrid.py`), and rewrite-enabled retrieval variants available as evaluated baselines and debugging tools; they operate over the same `chunks` corpus but are not the default for the current RAG path.
+### Database and retrieval index
 
-- **Answer-generation and judged datasets**:
-  - treat `data/answers/answers_vector_v2_prompt_grounded.jsonl` as the **main** generated-answer dataset,
-  - treat `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` as the **main** judged output associated with the selected v2 prompt-grounded strategy,
-  - retain the v1 files (`answers_vector_v1*.jsonl`) as earlier baselines for provenance and comparison rather than as current defaults.
+- run `src/db_init.py` to create the PostgreSQL schema, including fts and `chunk_embedding` columns and supporting indexes,
+- run `src/db_load_chunks.py` to load `data/chunks/chunks.jsonl` into the `chunks` table,
+- run `src/db_build_embeddings.py` to compute MiniLM embeddings and backfill the `chunk_embedding` pgvector column.
 
-This reflects the project’s current state: reranked vector retrieval plus the v2 prompt-grounded answer-generation pipeline is the default path for both evaluation and the interactive application, while all other retrieval modes and answer variants remain as documented, reproducible baselines layered on top of the same core dataset.
+### Retrieval baseline for evaluation and UI
+
+- use the reranked vector retriever (`src/retrieve_reranked.py`) as the primary retrieval backend for both:
+  - synthetic evaluation over `data/ground_truth_synthetic.jsonl`, and
+  - the interactive UI and answer-generation flows,
+- keep the plain vector (`src/retrieve_vector.py`), text (`src/retrieve_text.py`), hybrid (`src/retrieve_hybrid.py`), and rewrite-enabled retrieval variants available as evaluated baselines and debugging tools; they operate over the same chunks corpus but are not the default for the current RAG path.
+
+### Answer-generation and judged datasets
+
+- treat `data/answers/answers_vector_v2_prompt_grounded.jsonl` as the main generated-answer dataset,
+- treat `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` as the main judged output associated with the selected v2 prompt-grounded strategy,
+- retain the v1 files (`answers_vector_v1*.jsonl`) as earlier baselines for provenance and comparison rather than as current defaults.
+
+This reflects the project's current state: reranked vector retrieval plus the v2 prompt-grounded answer-generation pipeline is the default path for both evaluation and the interactive application, while all other retrieval modes and answer variants remain as documented, reproducible baselines layered on top of the same core dataset.
 
 For setup, runtime commands, and reproduction workflows, see `docs/runbook.md`.
 
@@ -440,32 +459,37 @@ The current Streamlit application (`app.py`) exercises the existing dataset and 
 
 Key points:
 
-- **Corpus and chunks**:
-  - The AI Navigator tab queries the same `chunks` corpus built from the reviewed Markdown snapshot (`data/corpus_snapshots/v1_2026-07-25/`) and heading-aware chunking pipeline.
-  - Audience metadata (`size_audience_tag`, `role_audience_tags`) continues to be used as filters in both backend retrieval and the interactive UI.
+### Corpus and chunks
 
-- **Retrieval backend**:
-  - The AI Navigator uses the reranked vector retriever (`chunks.chunk_embedding` with cosine distance, then cross-encoder reranking) as its default backend.
-  - Optional audience filters are applied in the same way as in evaluation: organisation size tag, with `all_sizes` as a fallback, and role tags for AI builders and AI consumers.
-  - The plain vector, text, hybrid, and rewrite-enabled retrieval helpers remain available for evaluation and debugging, but are not wired into the default UI flow.
+- The AI Navigator tab queries the same chunks corpus built from the reviewed Markdown snapshot (`data/corpus_snapshots/v1_2026-07-25/`) and heading-aware chunking pipeline.
+- Audience metadata (`size_audience_tag`, `role_audience_tags`) continues to be used as filters in both backend retrieval and the interactive UI.
 
-- **Answer generation and grounding**:
-  - The UI uses the same v2 prompt-grounded answer-generation path that produced `data/answers/answers_vector_v2_prompt_grounded.jsonl`.
-  - At query time, retrieved chunks are passed to the v2 prompt, and the returned answer includes:
-    - a groundedness flag,
-    - a set of `answer_chunk_ids` for grounding,
-    - token usage information.
-  - The evidence panel in the UI shows the retrieved chunks, including `chunk_id`, `heading_path`, and audience tags, reusing the same fields that underpin the evaluation datasets.
+### Retrieval backend
 
-- **Monitoring and conversation logs**:
-  - Conversation logs in the `conversations` table refer back to the dataset indirectly via:
-    - the question text and selected audience filters,
-    - the model ID and token counts,
-    - response latency and estimated cost.
-  - Feedback entries in the `feedback` table are keyed by `conversation_id` and do not modify the underlying corpus or evaluation artefacts.
-  - Dashboard charts are derived entirely from these operational tables and metrics; they consume, but do not alter, any of:
-    - `data/chunks/chunks.jsonl`,
-    - `data/ground_truth_*` evaluation files,
-    - answer and judged answer datasets under `data/answers/`.
+- The AI Navigator uses the reranked vector retriever (`chunks.chunk_embedding` with cosine distance, then cross-encoder reranking) as its default backend.
+- Optional audience filters are applied in the same way as in evaluation: organisation size tag, with `all_sizes` as a fallback, and role tags for AI builders and AI consumers.
+- The plain vector, text, hybrid, and rewrite-enabled retrieval helpers remain available for evaluation and debugging, but are not wired into the default UI flow.
+
+### Answer generation and grounding
+
+- The evaluated answer artifacts (`answers_vector_v2_prompt_grounded.jsonl`) were generated using the plain vector baseline for historical comparison.
+- However, the live AI Navigator UI dynamically uses the upgraded `vector_reranked` backend at query time alongside the winning v2 prompt to maximize final answer quality.
+- At query time, retrieved chunks are passed to the v2 prompt, and the returned answer includes:
+  - a groundedness flag,
+  - a set of `answer_chunk_ids` for grounding,
+  - token usage information.
+- The evidence panel in the UI shows the retrieved chunks, including `chunk_id`, `heading_path`, and audience tags, reusing the same fields that underpin the evaluation datasets.
+
+### Monitoring and conversation logs
+
+- Conversation logs in the `conversations` table refer back to the dataset indirectly via:
+  - the question text and selected audience filters,
+  - the model ID and token counts,
+  - response latency and estimated cost.
+- Feedback entries in the `feedback` table are keyed by `conversation_id` and do not modify the underlying corpus or evaluation artefacts.
+- Dashboard charts are derived entirely from these operational tables and metrics; they consume, but do not alter, any of:
+  - `data/chunks/chunks.jsonl`,
+  - `data/ground_truth_*` evaluation files,
+  - answer and judged answer datasets under `data/answers/`.
 
 In other words, the Streamlit UI and monitoring layer sit on top of the existing dataset and retrieval infrastructure. They provide an interactive and observable interface to the reranked vector + v2 prompt-grounded RAG path while leaving the core corpus, chunking strategy, seeds, synthetic questions, and judged answer datasets unchanged.

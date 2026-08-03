@@ -109,12 +109,12 @@ An optional `--debug-output` parameter writes per-question, per-backend debug re
 On the current 27-question synthetic benchmark:
 
 - **Text retrieval**:
-  - After loosening the full-text condition to “rank then filter on `score > 0`”, strict Hit@k and MRR are non-zero.
+  - After loosening the full-text condition to “rank then filter on `score > 0`”, strict Hit@k and MRR are non-zero (strict Hit@5: ~0.259, strict MRR: ~0.099, relaxed Hit@10: ~0.259, relaxed MRR: ~0.099).
   - However, text retrieval still struggles with long, conversational questions and nuanced AI-security phrasing.
   - Rewriting does not improve text retrieval on this benchmark and reduces both strict and relaxed scores.
 
 - **Vector retrieval**:
-  - Strict Hit@k and MRR are substantially higher than for text.
+  - Strict Hit@k and MRR are substantially higher than for text (strict Hit@5: ~0.852, strict MRR: 0.750, relaxed Hit@10: ~0.926, relaxed MRR: ~0.761).
   - Vector retrieval is particularly stronger on:
     - paraphrased security questions,
     - questions about risk/mitigation combinations,
@@ -122,13 +122,13 @@ On the current 27-question synthetic benchmark:
   - Rewriting is slightly mixed here: strict metrics fall a little, while relaxed MRR improves slightly, but the overall win is not strong enough to make rewrite the default.
 
 - **Vector reranked retrieval**:
-  - Vector reranking is the current best-performing retrieval strategy on this benchmark.
+  - Vector reranking is the current best-performing retrieval strategy on this benchmark (strict Hit@5: ~0.926, strict MRR: ~0.889, relaxed Hit@10: ~0.963, relaxed MRR: ~0.894).
   - It improves both strict and relaxed metrics over vector-only retrieval.
   - The reranker is especially helpful when vector search finds the right topic but does not place the most exact passage at rank 1.
   - Rewriting makes this method worse on strict MRR and worse on relaxed metrics, so the rewritten variant is not preferred.
 
 - **Hybrid retrieval**:
-  - Hybrid (RRF) improves clearly over text-only.
+  - Hybrid (RRF) improves clearly over text-only (strict Hit@5: ~0.778, strict MRR: ~0.373, relaxed Hit@10: ~0.889, relaxed MRR: ~0.389).
   - On this benchmark, hybrid does **not** outperform vector-only or vector-reranked retrieval.
   - In some cases it pulls in useful lexical hits; in others it slightly dilutes strong vector rankings.
   - Rewriting also hurts hybrid performance on this benchmark.
@@ -143,6 +143,9 @@ Given this evidence, the project treats **vector-reranked retrieval without quer
 ---
 
 ## 3. Answer-generation evaluation
+
+> **Note on Retrieval Baseline for Answer Generation:** 
+> The prompt A/B test (v1 vs. v2) was conducted and frozen using the plain `vector` retrieval baseline to ensure a strictly controlled comparison. The project has since adopted `vector_reranked` as the superior default retrieval backend for the live Streamlit UI and for new answer-generation runs. The static evaluation artifacts (`answers_vector_v1...` and `answers_vector_v2_prompt_grounded...`) are intentionally preserved to document the prompt engineering experiment, while a new reranked-vector v2 answer set and judged output have been generated using the updated `generate_answers.py` and `judge_answers.py` scripts.
 
 ### 3.1 Setup
 
@@ -159,12 +162,13 @@ For each question, the evaluation pipeline:
 3. calls a prompt-grounded LLM to generate an answer,
 4. stores the answer and provenance in JSONL.
 
-The project currently preserves two answer datasets:
+The project currently preserves three answer datasets:
 
-- `data/answers/answers_vector_v1.jsonl`
-- `data/answers/answers_vector_v2_prompt_grounded.jsonl`
+- `data/answers/answers_vector_v1.jsonl` — earlier answer-generation variant (plain vector, v1 prompt)
+- `data/answers/answers_vector_v2_prompt_grounded.jsonl` — plain vector retrieval + v2 prompt (frozen baseline)
+- `data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl` — reranked vector retrieval + v2 prompt (current default)
 
-The v2 file corresponds to the currently selected answer-generation approach.
+The reranked-vector v2 file is the currently selected answer-generation artefact for the project’s default path. The earlier v1 and plain-vector v2 files are retained as frozen baselines for comparison.
 
 ### 3.2 Datasets
 
@@ -207,8 +211,11 @@ Answer quality is estimated using an LLM-as-a-judge pipeline implemented in `src
 
 Judged records are written to:
 
-- `data/answers/answers_vector_v1_judged.jsonl`
-- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`
+- `data/answers/answers_vector_v1_judged.jsonl` — judged output for the v1 baseline
+- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` — judged output for the plain-vector v2 baseline (frozen)
+- `data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl` — judged output for the reranked-vector v2 default (current)
+
+The current default judged artefact is `answers_vector_reranked_v2_prompt_grounded_judged.jsonl`. The earlier judged files are preserved as frozen baselines tied to their respective answer-generation variants.
 
 For high-level comparison, a small aggregation script (or an ad hoc analysis notebook) computes:
 
@@ -235,13 +242,13 @@ On the current 27-question synthetic benchmark:
 
 The benchmark is still small and relies on an LLM judge rather than human labels, so the numbers should be treated as **project-level evidence** rather than production-grade evaluation. Nevertheless, the difference between v1 and v2 is large enough, and qualitatively clear enough, to justify the current default choice.
 
-### 3.5 Current default
+## 3.5 Current default
 
-Based on these results:
+Based on these results and the updated retrieval backend:
 
-- `src/generate_answers.py` (v2 prompt-grounded) is the **default answer-generation script**.
-- `data/answers/answers_vector_v2_prompt_grounded.jsonl` and `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` are the **primary** answer and judged-answer artefacts.
-- `src/generate_answers_v1.py` and the v1 JSONL files are retained for provenance and comparison, but not used as the default.
+- `src/generate_answers.py` (v2 prompt-grounded, using `retrieve_reranked.py`) is the **default answer-generation script**.
+- `data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl` and `data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl` are the **primary** answer and judged-answer artefacts for the current default path.
+- `data/answers/answers_vector_v1.jsonl`, `data/answers/answers_vector_v1_judged.jsonl`, `data/answers/answers_vector_v2_prompt_grounded.jsonl`, and `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` are retained as frozen baselines for provenance and comparison, but are not used as the default.
 
 ---
 

@@ -9,11 +9,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from llm_client import get_default_model, llm_structured_retry
-from retrieve_vector import retrieve_chunks_vector
-
+from retrieve_reranked import retrieve_chunks_reranked
 
 DEFAULT_INPUT = Path("data/ground_truth_synthetic.jsonl")
-DEFAULT_OUTPUT = Path("data/answers/answers_vector_v2_prompt_grounded.jsonl")
+DEFAULT_OUTPUT = Path(
+    "data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl"
+)
 
 
 class AnswerOutput(BaseModel):
@@ -75,6 +76,8 @@ def prepare_chunk_context(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "size_audience_tag": chunk.get("size_audience_tag"),
                 "role_audience_tags": chunk.get("role_audience_tags", []),
                 "similarity": chunk.get("similarity"),
+                "reranker_score": chunk.get("reranker_score"),
+                "vector_rank": chunk.get("vector_rank"),
                 "chunk_text": chunk.get("chunk_text", ""),
             }
         )
@@ -178,7 +181,7 @@ def generate_answer_for_question(
     target_size = question_row.get("target_size")
     target_role = question_row.get("target_role")
 
-    retrieved = retrieve_chunks_vector(
+    retrieved = retrieve_chunks_reranked(
         query=question,
         limit=top_k,
         size_tag=target_size,
@@ -227,6 +230,8 @@ def generate_answer_for_question(
                 "document_title": c.get("document_title"),
                 "heading_path": c.get("heading_path", []),
                 "similarity": c.get("similarity"),
+                "reranker_score": c.get("reranker_score"),
+                "vector_rank": c.get("vector_rank"),
             }
             for c in retrieved_context
         ],
@@ -246,7 +251,9 @@ def generate_answer_for_question(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate grounded answers over vector-retrieved ACSC chunks."
+        description=(
+            "Generate grounded answers over reranked-vector-retrieved ACSC chunks."
+        )
     )
     parser.add_argument(
         "--input",
@@ -262,7 +269,7 @@ def main() -> None:
         "--top-k",
         type=int,
         default=5,
-        help="Number of vector-retrieved chunks to provide to the answer generator.",
+        help="Number of reranked retrieved chunks to provide to the answer generator.",
     )
     parser.add_argument(
         "--limit",
