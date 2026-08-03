@@ -7,6 +7,7 @@ from statistics import mean
 from typing import Any, Callable
 
 from retrieve_hybrid import retrieve_chunks_hybrid
+from retrieve_reranked import retrieve_chunks_reranked
 from retrieve_text import retrieve_chunks
 from retrieve_vector import retrieve_chunks_vector
 
@@ -34,6 +35,11 @@ RETRIEVERS: dict[str, dict[str, Any]] = {
         "top_k_param": "k",
         "score_field": "similarity",
     },
+    "vector_reranked": {
+        "fn": retrieve_chunks_reranked,
+        "top_k_param": "limit",
+        "score_field": "reranker_score",
+    },
     "hybrid": {
         "fn": retrieve_chunks_hybrid,
         "top_k_param": "limit",
@@ -44,7 +50,7 @@ RETRIEVERS: dict[str, dict[str, Any]] = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate text, vector, and hybrid retrieval on the synthetic ground-truth set."
+        description="Evaluate text, vector, vector-reranked, and hybrid retrieval on the synthetic ground-truth set."
     )
     parser.add_argument(
         "--ground-truth",
@@ -72,7 +78,7 @@ def load_ground_truth(path: Path) -> list[dict]:
     return records
 
 
-def last_heading(path_value) -> str | None:
+def last_heading(path_value: Any) -> str | None:
     if path_value is None:
         return None
     if isinstance(path_value, list):
@@ -190,7 +196,9 @@ def mrr_from_binary(relevance_scores: list[list[int]], positive_values: set[int]
     return mean(reciprocal_ranks) if reciprocal_ranks else 0.0
 
 
-def build_debug_result_rows(results: list[dict[str, Any]], backend_name: str) -> list[dict[str, Any]]:
+def build_debug_result_rows(
+    results: list[dict[str, Any]], backend_name: str
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
     for rank, row in enumerate(results, start=1):
@@ -210,6 +218,11 @@ def build_debug_result_rows(results: list[dict[str, Any]], backend_name: str) ->
         elif backend_name == "vector":
             item["similarity"] = row.get("similarity")
             item["cosine_distance"] = row.get("cosine_distance")
+        elif backend_name == "vector_reranked":
+            item["reranker_score"] = row.get("reranker_score")
+            item["vector_rank"] = row.get("vector_rank")
+            item["vector_similarity"] = row.get("vector_similarity")
+            item["vector_cosine_distance"] = row.get("vector_cosine_distance")
         elif backend_name == "hybrid":
             item["hybrid_score"] = row.get("hybrid_score")
             item["text_rank"] = row.get("text_rank")
@@ -341,10 +354,30 @@ def debug_top_k(ground_truth: list[dict], backend_name: str) -> None:
                 score = row.get("similarity")
                 score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "n/a"
                 extra = f"similarity={score_str}"
+            elif backend_name == "vector_reranked":
+                reranker_score = row.get("reranker_score")
+                reranker_score_str = (
+                    f"{reranker_score:.4f}"
+                    if isinstance(reranker_score, (int, float))
+                    else "n/a"
+                )
+                vector_similarity = row.get("vector_similarity")
+                vector_similarity_str = (
+                    f"{vector_similarity:.4f}"
+                    if isinstance(vector_similarity, (int, float))
+                    else "n/a"
+                )
+                extra = (
+                    f"reranker_score={reranker_score_str} "
+                    f"vector_rank={row.get('vector_rank')} "
+                    f"vector_similarity={vector_similarity_str}"
+                )
             else:
                 hybrid_score = row.get("hybrid_score")
                 hybrid_score_str = (
-                    f"{hybrid_score:.6f}" if isinstance(hybrid_score, (int, float)) else "n/a"
+                    f"{hybrid_score:.6f}"
+                    if isinstance(hybrid_score, (int, float))
+                    else "n/a"
                 )
                 extra = (
                     f"hybrid_score={hybrid_score_str} "

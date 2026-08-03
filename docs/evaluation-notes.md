@@ -30,7 +30,7 @@ Retrieval evaluation is based on a synthetic benchmark built in three stages:
   - a best guess at `heading_path` and, where needed, `numbered_item_title_guess`.
 
 - **Seed–chunk matching and vetting**:
-  - `src/match_seeds_to_chunks.py` matches seeds to concrete chunks in `data/chunks/chunks.jsonl`, producing `data/seed_chunk_candidates.json` with candidate chunks, scores, and debug information.
+  - `src/resolve_seed_draft_ids.py` matches seeds to concrete chunks in `data/chunks/chunks.jsonl`, producing `data/seed_chunk_candidates.json` with candidate chunks, scores, and debug information.
   - An LLM-based vetting step consumes these candidates and writes `data/ground_truth_seeds_vetted.jsonl`, marking which seeds to include for evaluation and assigning a seed-quality label.
 
 - **Synthetic question generation**:
@@ -45,7 +45,7 @@ This benchmark is small (currently 27 questions) and intentionally seed-anchored
 
 ### 2.2 Retrieval methods
 
-Three retrieval methods are evaluated over the same benchmark:
+Four retrieval methods are evaluated over the same benchmark:
 
 - **Text (lexical)** — `src/retrieve_text.py`:
   - uses PostgreSQL full-text search (`fts` over `search_text`),
@@ -56,26 +56,32 @@ Three retrieval methods are evaluated over the same benchmark:
     - `role_audience_tags` (JSONB array containment).
 
 - **Vector (dense)** — `src/retrieve_vector.py`:
-  - uses a MiniLM sentence-transformers model (currently `sentence-transformers/all-MiniLM-L6-v2`) to embed `chunk_text` and queries,
+  - uses a MiniLM sentence-transformers model (`sentence-transformers/all-MiniLM-L6-v2`) to embed `chunk_text` and queries,
   - stores embeddings in a pgvector `chunk_embedding` column,
   - performs nearest-neighbour search using cosine distance (`chunk_embedding <=> query_embedding`),
   - supports the same audience filters as the text retriever,
   - returns per-chunk `cosine_distance` and a convenience `similarity` score.
 
+- **Vector reranked** — `src/retrieve_reranked.py`:
+  - first retrieves a small candidate pool with vector search,
+  - then reranks those candidates with a cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`),
+  - preserves vector debug fields (`vector_rank`, `vector_similarity`, `vector_cosine_distance`),
+  - adds `reranker_score` for final ordering.
+
 - **Hybrid (RRF)** — `src/retrieve_hybrid.py`:
   - calls both the text and vector retrievers with the same query and audience filters,
-  - collects a small candidate set from each (e.g. top‑10 text and top‑10 vector),
+  - collects a small candidate set from each (e.g. top-10 text and top-10 vector),
   - fuses results per `chunk_id` using reciprocal rank fusion (RRF) to produce a `hybrid_score`,
   - preserves backend-specific debug fields (`text_rank`, `vector_rank`, `text_score`, `vector_similarity`).
 
-All three methods operate over the same chunk corpus (`data/chunks/chunks.jsonl`) and audience metadata.
+All methods operate over the same chunk corpus (`data/chunks/chunks.jsonl`) and audience metadata.
 
 ### 2.3 Metrics
 
-Retrieval evaluation is implemented in `src/evaluate_retrieval.py`. For each backend (text, vector, hybrid), it computes:
+Retrieval evaluation is implemented in `src/evaluate_retrieval.py`. For each backend (text, vector, vector_reranked, hybrid), it computes:
 
 - **Strict metrics**:
-  - Hit@k: whether the exact gold `chunk_id` appears in the top‑k results.
+  - Hit@k: whether the exact gold `chunk_id` appears in the top-k results.
   - MRR: mean reciprocal rank of the exact gold `chunk_id`.
 
 - **Relaxed metrics**:
@@ -107,12 +113,17 @@ On the current 27-question synthetic benchmark:
     - questions about risk/mitigation combinations,
     - questions using more natural, less keyword-driven language.
 
+- **Vector reranked retrieval**:
+  - Vector reranking is the current best-performing retrieval strategy on this benchmark.
+  - It improves both strict and relaxed metrics over vector-only retrieval.
+  - The reranker is especially helpful when vector search finds the right topic but does not place the most exact passage at rank 1.
+
 - **Hybrid retrieval**:
   - Hybrid (RRF) improves clearly over text-only.
-  - On this benchmark, hybrid does **not** outperform vector-only.
+  - On this benchmark, hybrid does **not** outperform vector-only or vector-reranked retrieval.
   - In some cases it pulls in useful lexical hits; in others it slightly dilutes strong vector rankings.
 
-Given this evidence, the project treats **vector retrieval** as the current default backend for both evaluation and the interactive application. Text and hybrid retrieval remain available as evaluated baselines and debugging tools.
+Given this evidence, the project treats **vector-reranked retrieval** as the current default backend for both evaluation and the interactive application. Text, vector, and hybrid retrieval remain available as evaluated baselines and debugging tools.
 
 ---
 
@@ -124,11 +135,11 @@ Answer-generation evaluation is built on top of the synthetic retrieval benchmar
 
 - questions come from `data/ground_truth_synthetic.jsonl`,
 - gold passages are identified by `gold_source_id` and `gold_chunk_id`,
-- retrieval uses the vector backend with a default `top_k` (currently 5) and audience filters derived from `target_size` and `target_role`.
+- retrieval uses the reranked vector backend with a default `top_k` (currently 5) and audience filters derived from `target_size` and `target_role`.
 
 For each question, the evaluation pipeline:
 
-1. retrieves top‑k chunks via vector retrieval,
+1. retrieves top-k chunks via reranked vector retrieval,
 2. assembles a structured context (chunks plus headings and audience metadata),
 3. calls a prompt-grounded LLM to generate an answer,
 4. stores the answer and provenance in JSONL.
@@ -225,7 +236,7 @@ Based on these results:
 The Streamlit application (`app.py`) is wired to the evaluated defaults:
 
 - **Retrieval**:
-  - the AI Navigator uses vector retrieval as its default backend,
+  - the AI Navigator uses vector retrieval followed by cross-encoder reranking as its default backend,
   - audience filters in the UI map to the same `size_audience_tag` and `role_audience_tags` fields used in evaluation,
   - `top_k` defaults to 5 but can be adjusted for exploration.
 
@@ -236,9 +247,9 @@ The Streamlit application (`app.py`) is wired to the evaluated defaults:
 - **Monitoring**:
   - the `conversations` and `feedback` tables store interaction-level telemetry (question, audience filters, model, tokens, latency, cost, feedback),
   - these tables are used to build the Monitoring Dashboard charts,
-  - they **do not** alter the benchmark datasets or corpus; they simply record usage over the evaluated path.
+  - they do not alter the benchmark datasets or corpus; they simply record usage over the evaluated path.
 
-In other words, the interactive app is an evaluated path, not a separate, ad hoc configuration: it uses the same vector + v2 setup that performed best on the synthetic benchmark.
+In other words, the interactive app is an evaluated path, not a separate, ad hoc configuration: it uses the same reranked retrieval + v2 setup that performed best on the synthetic benchmark.
 
 ---
 
@@ -246,23 +257,23 @@ In other words, the interactive app is an evaluated path, not a separate, ad hoc
 
 To replicate the current evaluation results from a clean clone:
 
-1. **Corpus and chunks**  
-   - Restore the reviewed Markdown snapshot (or rebuild and re-review intentionally).  
+1. **Corpus and chunks**
+   - Restore the reviewed Markdown snapshot (or rebuild and re-review intentionally).
    - Run `uv run python src/prepare_chunks.py` to regenerate `data/chunks/chunks.jsonl`.
 
-2. **Database and embeddings**  
-   - Run `uv run python src/db_init.py`.  
-   - Run `uv run python src/db_load_chunks.py`.  
+2. **Database and embeddings**
+   - Run `uv run python src/db_init.py`.
+   - Run `uv run python src/db_load_chunks.py`.
    - Run `uv run python src/db_build_embeddings.py`.
 
-3. **Retrieval evaluation**  
-   - Ensure `data/ground_truth_synthetic.jsonl` is present (from the committed benchmark or regenerated as a new version).  
-   - Run `uv run python src/evaluate_retrieval.py`.  
-   - Optionally add `--debug-output data/eval/retrieval_debug.jsonl` to capture per-question debug records.
+3. **Retrieval evaluation**
+   - Ensure `data/ground_truth_synthetic.jsonl` is present (from the committed benchmark or regenerated as a new version).
+   - Run `uv run python src/evaluate_retrieval.py`.
+   - Optional: add `--debug-output data/eval/retrieval_debug.jsonl` to capture per-question debug records.
 
-4. **Answer-generation evaluation**  
-   - Run `uv run python src/generate_answers.py` to regenerate v2 answers if needed.  
-   - Run `uv run python src/judge_answers.py` to re-judge v1 and v2 answers (or just v2).  
+4. **Answer-generation evaluation**
+   - Run `uv run python src/generate_answers.py` to regenerate v2 answers if needed.
+   - Run `uv run python src/judge_answers.py` to re-judge v1 and v2 answers (or just v2).
    - Use a small analysis script or notebook to compute `good` rates per variant.
 
 The rest of the project (self-assessment, runbook, dataset notes, UI) should be read as describing this evaluated setup and its current default choices, rather than separate or conflicting configurations.

@@ -602,3 +602,36 @@ Concretely:
 
 ### Notes
 This decision applies to the runtime path used to launch and demonstrate the application. It does not mean every corpus-preparation or evaluation step must run inside Docker at this stage.
+
+## D-014 — Adopt reranked retrieval as default
+Date: 2026-08-03  
+Status: Accepted
+
+### Context
+The project had already selected vector retrieval as the preferred baseline, but a reranked variant was added that uses a cross-encoder to rescore the top vector candidates. On the frozen 27-question benchmark, reranked retrieval outperformed plain vector retrieval on both strict and relaxed retrieval metrics.
+
+### Decision
+Use **vector retrieval followed by cross-encoder reranking** as the default retrieval path for the project.
+
+Concretely:
+
+- keep `src/retrieve_vector.py` as the first-stage semantic retriever,
+- use `src/retrieve_reranked.py` to rerank the top vector candidates,
+- treat `vector_reranked` as the preferred backend in evaluation and downstream RAG flows,
+- keep text, vector, and hybrid retrieval available as baselines and debugging alternatives.
+
+### Reason
+The reranked retriever produced the strongest results on the current synthetic benchmark and did so consistently across repeated runs. It improves the chance that the most exact relevant chunk appears at the top of the ranked list, which is especially useful for grounding answer generation.
+
+### Alternatives considered
+- Keep plain vector retrieval as the default.
+- Use hybrid retrieval as the default.
+- Switch back to text-only retrieval.
+
+### Trade-offs
+Reranking adds some latency relative to plain vector retrieval, but the quality gain was large enough to justify that cost for this project stage.
+
+### Impact
+- `src/evaluate_retrieval.py` should treat `vector_reranked` as the main retrieval backend for comparison and reporting.
+- Documentation should describe the default path as vector search plus cross-encoder reranking.
+- If answer generation is regenerated later, it should use reranked retrieval rather than plain vector retrieval.

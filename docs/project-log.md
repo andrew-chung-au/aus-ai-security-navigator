@@ -235,7 +235,7 @@ Connect curated evaluation seeds to concrete chunks and vet them as suitable see
   - `best_heading_path_guess`
   - optional `numbered_item_title_guess`
   - optional `anchor_quote`
-- Implemented a deterministic seed–chunk matching script (`src/match_seeds_to_chunks.py`) that:
+- Implemented a deterministic seed–chunk matching script (`src/resolve_seed_draft_ids.py`) that:
   - groups chunks by `source_id`
   - for each seed, optionally narrows the candidate pool to chunks whose last heading matches `numbered_item_title_guess` after loose normalization
   - if such numbered-item matches exist, ranks only that subset; otherwise, uses all chunks for that `source_id`
@@ -790,3 +790,55 @@ Containerise the RAG application and its PostgreSQL/pgvector backend so reviewer
     - `docker compose up -d postgres app`,
   - the full reset path using `docker compose down -v` followed by a fresh bootstrap,
   - any known limitations, such as the need to keep `.env` local and to update `src/pricing.py` when using new LLM models.
+
+  ## 2026-08-03 — Retrieval reranker adopted as default
+
+### Goal
+Improve retrieval quality beyond the vector baseline by adding a lightweight cross-encoder reranking stage and using it to evaluate the current default retrieval path.
+
+### What was done
+- Added `src/retrieve_reranked.py` as a new retrieval helper.
+- Implemented `retrieve_chunks_reranked(query, limit=None, k=None, size_tag=None, role_tag=None, candidate_limit=20)` that:
+  - retrieves a candidate pool from the vector retriever,
+  - scores `(query, chunk_text)` pairs with `cross-encoder/ms-marco-MiniLM-L-6-v2`,
+  - preserves vector debug fields on each returned row:
+    - `vector_rank`
+    - `vector_similarity`
+    - `vector_cosine_distance`
+  - adds a reranker score field:
+    - `reranker_score`
+  - sorts by reranker score descending, with vector rank as the tie-breaker.
+- Added a small CLI wrapper so the reranker can be run manually as:
+  - `uv run python src/retrieve_reranked.py "query text"`
+  - `uv run python src/retrieve_reranked.py "query text" --limit 5`
+  - `uv run python src/retrieve_reranked.py "query text" --candidate-limit 20`
+  - `uv run python src/retrieve_reranked.py "query text" --size-tag medium_business --role-tag ai_builder`
+- Updated `src/evaluate_retrieval.py` to include `vector_reranked` alongside `text`, `vector`, and `hybrid`.
+- Kept the same strict and relaxed evaluation logic:
+  - exact `chunk_id` matching for strict metrics,
+  - relaxed matching on `source_id` plus leaf heading for near-misses.
+- Preserved optional JSONL debug export for per-question inspection.
+
+### Why
+- Vector retrieval was already the strongest baseline, but reranking gives a better chance of placing the most exact passage at rank 1.
+- A cross-encoder reranker is a simple, low-risk enhancement that fits the existing retrieval architecture.
+- Preserving the vector candidate metadata makes the reranked results easy to debug and compare with the underlying vector stage.
+
+### Findings
+- The reranked retriever outperformed plain vector retrieval on the frozen 27-question synthetic benchmark.
+- On the latest evaluation run:
+  - `vector_reranked` achieved the best strict Hit@5 and strict MRR,
+  - `vector_reranked` also improved relaxed Hit@10 and relaxed MRR,
+  - hybrid retrieval remained below vector-reranked performance on this corpus and benchmark.
+- A repeat run produced identical metrics, confirming the reranked evaluation path is stable and reproducible.
+
+### Problems / uncertainties
+- The reranker introduces extra latency compared with vector-only retrieval.
+- The benchmark is still small, so results should be treated as project-level evidence rather than a final universal ranking.
+- Hybrid retrieval may still be useful for debugging and comparison even though it is not the best default.
+
+### Next step
+- Treat `vector_reranked` as the current default retrieval backend.
+- Update retrieval and evaluation documentation so the default path is described as vector retrieval followed by cross-encoder reranking.
+- Keep text, vector, and hybrid retrieval available as baselines for comparison and debugging.
+- If answer-generation is regenerated in the future, use the reranked retrieval path there as well.

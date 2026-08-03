@@ -80,8 +80,8 @@ This document tracks the current state of the project against a set of evaluatio
 
 ## Bonus implementation categories
 
-- Hybrid search: combining both text and vector search (at least evaluating it).
-- Document re-ranking.
+- Hybrid search: combining both text and vector search, at least evaluated.
+- Document reranking.
 - User query rewriting.
 - Deployment to the cloud.
 
@@ -89,23 +89,23 @@ This document tracks the current state of the project against a set of evaluatio
 
 ## Current status summary
 
-This table is a snapshot as of 2026-07-26 and is intended to be updated as the project evolves.
+This table is a snapshot as of 2026-08-03 and is intended to be updated as the project evolves.
 
-| Area                 | State | Notes |
-|----------------------|-------|-------|
-| Problem description  | Good  | Clear problem, scope, and users are documented. |
-| Retrieval flow       | Good  | Knowledge base and retrieval backends are implemented; grounded answer-generation and judge artefacts are also present. |
-| Retrieval evaluation | Good  | Text, vector, and hybrid retrieval are evaluated on the same benchmark; vector is chosen on evidence as the current default. |
-| LLM evaluation       | Good  | Two answer-generation variants were compared on the same synthetic benchmark using a consistent judge setup; v2 was selected as the stronger approach. |
-| Interface            | Good  | Streamlit UI with an AI Navigator tab and a Monitoring Dashboard on top of the CLI scripts. |
-| Ingestion pipeline   | OK    | Semi-automated ingestion with scripts plus manual cleanup; no orchestration tool yet. |
-| Monitoring           | Good  | User feedback is logged and a monitoring dashboard with multiple charts is available in the Streamlit app. |
-| Containerization     | Good  | Dockerfile, multi-service `docker-compose.yml`, containerised Postgres/pgvector backend, bootstrap service, and app service are now in place. |
-| Reproducibility      | Good  | Clear instructions, accessible dataset, pinned dependencies, committed Docker config, and a committed Streamlit config. |
-| Hybrid search        | —     | Implemented and evaluated via reciprocal rank fusion; improves over text but not over vector on the current benchmark. |
-| Document reranking   | —     | No second-stage reranker yet. |
-| Query rewriting      | —     | No explicit query rewrite step yet. |
-| Cloud deployment     | —     | No deployment; local development only. |
+| Area | State | Notes |
+|---|---|---|
+| Problem description | Good | Clear problem, scope, and users are documented. |
+| Retrieval flow | Good | Knowledge base and retrieval backends are implemented; grounded answer-generation and judge artefacts are also present. |
+| Retrieval evaluation | Good | Text, vector, reranked vector, and hybrid retrieval are evaluated on the same benchmark; reranked vector is the current default based on evidence. |
+| LLM evaluation | Good | Two answer-generation variants were compared on the same synthetic benchmark using a consistent judge setup; v2 was selected as the stronger approach. |
+| Interface | Good | Streamlit UI with an AI Navigator tab and a Monitoring Dashboard on top of the CLI scripts. |
+| Ingestion pipeline | OK | Semi-automated ingestion with scripts plus manual cleanup; no orchestration tool yet. |
+| Monitoring | Good | User feedback is logged and a monitoring dashboard with multiple charts is available in the Streamlit app. |
+| Containerization | Good | Dockerfile, multi-service `docker-compose.yml`, containerised Postgres/pgvector backend, bootstrap service, and app service are now in place. |
+| Reproducibility | Good | Clear instructions, accessible dataset, pinned dependencies, committed Docker config, and a committed Streamlit config. |
+| Hybrid search | Good | Implemented and evaluated via reciprocal rank fusion; improves over text but not over reranked vector on the current benchmark. |
+| Document reranking | Good | Implemented via `src/retrieve_reranked.py` and now the preferred retrieval baseline. |
+| Query rewriting | — | No explicit query rewrite step yet. |
+| Cloud deployment | — | No deployment; local development only. |
 
 ---
 
@@ -115,15 +115,15 @@ The project clearly explains that it aims to help Australian organisations navig
 
 ## Retrieval flow — (Good)
 
-The project uses both a knowledge base and LLM-supported workflow components. ACSC documents are downloaded, cleaned, chunked, stored as `data/chunks/chunks.jsonl`, and loaded into a PostgreSQL `chunks` table. Retrieval scripts implement full-text search, pgvector-based dense retrieval, and a hybrid fusion retriever, while the LLM helper supports seed vetting, synthetic question generation, answer generation, and answer judging.
+The project uses both a knowledge base and LLM-supported workflow components. ACSC documents are downloaded, cleaned, chunked, stored as `data/chunks/chunks.jsonl`, and loaded into a PostgreSQL `chunks` table. Retrieval scripts implement full-text search, pgvector-based dense retrieval, a reranked vector retriever, and a hybrid fusion retriever, while the LLM helper supports seed vetting, synthetic question generation, answer generation, and answer judging.
 
-This matches the Good definition for this criterion because both a knowledge base and LLM-supported components are part of the overall system rather than direct prompting alone. Evidence is in `src/db_init.py`, `src/db_load_chunks.py`, `src/db_build_embeddings.py`, `src/retrieve_text.py`, `src/retrieve_vector.py`, `src/retrieve_hybrid.py`, `src/generate_answers.py`, `src/judge_answers.py`, `src/llm_client.py`, and the corpus files.
+This matches the Good definition for this criterion because both a knowledge base and LLM-supported components are part of the overall system rather than direct prompting alone. Evidence is in `src/db_init.py`, `src/db_load_chunks.py`, `src/db_build_embeddings.py`, `src/retrieve_text.py`, `src/retrieve_vector.py`, `src/retrieve_reranked.py`, `src/retrieve_hybrid.py`, `src/generate_answers.py`, `src/judge_answers.py`, `src/llm_client.py`, and the corpus files.
 
 ## Retrieval evaluation — (Good)
 
-Retrieval quality is evaluated explicitly, and multiple retrieval approaches are compared on the same synthetic benchmark. The project builds a synthetic ground-truth set and uses `src/evaluate_retrieval.py` to compare text retrieval, vector retrieval, and hybrid retrieval, reporting metrics such as Hit@k and MRR (strict and relaxed).
+Retrieval quality is evaluated explicitly, and multiple retrieval approaches are compared on the same synthetic benchmark. The project builds a synthetic ground-truth set and uses `src/evaluate_retrieval.py` to compare text retrieval, vector retrieval, reranked vector retrieval, and hybrid retrieval, reporting metrics such as Hit@k and MRR, both strict and relaxed.
 
-Current results show that vector retrieval substantially outperforms the text baseline, while simple hybrid retrieval improves over text but does not beat vector on the current corpus and question set. This matches the Good definition for this criterion: multiple retrieval approaches are evaluated and the best one is used. Evidence is in `src/evaluate_retrieval.py`, `src/retrieve_text.py`, `src/retrieve_vector.py`, `src/retrieve_hybrid.py`, `data/ground_truth_synthetic.jsonl`, `docs/evaluation-notes.md`, and the recorded metrics.
+Current results show that reranked vector retrieval substantially outperforms the text baseline and the plain vector baseline on the current benchmark, while simple hybrid retrieval improves over text but does not beat reranked vector. This matches the Good definition for this criterion: multiple retrieval approaches are evaluated and the best one is used. Evidence is in `src/evaluate_retrieval.py`, `src/retrieve_text.py`, `src/retrieve_vector.py`, `src/retrieve_reranked.py`, `src/retrieve_hybrid.py`, `data/ground_truth_synthetic.jsonl`, `docs/evaluation-notes.md`, and the recorded metrics.
 
 ## LLM evaluation — (Good)
 
@@ -137,7 +137,7 @@ This matches the Good definition for this criterion: multiple final-output appro
 
 The project now includes both CLI-based workflows and a user-facing UI. Scripts under `src/` support download, extraction, chunking, evaluation, and answer generation and judging. On top of this, `app.py` exposes a Streamlit web application with:
 
-- an **AI Navigator** tab for interactive questions, audience filters, vector retrieval, and v2 prompt-grounded answers, and
+- an **AI Navigator** tab for interactive questions, audience filters, reranked vector retrieval, and v2 prompt-grounded answers, and
 - a **Monitoring Dashboard** tab for metrics, charts, and recent conversations.
 
 This matches the Good definition for this criterion: there is a UI (Streamlit) in addition to scripts. Evidence is in `app.py`, `.streamlit/config.toml`, `README.md`, and `docs/runbook.md`.
@@ -189,11 +189,11 @@ These categories are not part of any formal score here, but they are useful indi
 
 Hybrid search is implemented and evaluated. The project includes a simple reciprocal-rank-fusion (RRF) hybrid retriever that combines text and vector results without directly normalising their different score scales.
 
-On the current synthetic benchmark, hybrid retrieval improves substantially over text-only retrieval but does not outperform vector-only retrieval, so it is retained as an evaluated alternative and debugging aid rather than the default retriever. Evidence is in `src/retrieve_hybrid.py`, `src/evaluate_retrieval.py`, and `docs/evaluation-notes.md`.
+On the current synthetic benchmark, hybrid retrieval improves substantially over text-only retrieval but does not outperform reranked vector retrieval, so it is retained as an evaluated alternative and debugging aid rather than the default retriever. Evidence is in `src/retrieve_hybrid.py`, `src/evaluate_retrieval.py`, and `docs/evaluation-notes.md`.
 
 ### Document re-ranking
 
-Document or chunk reranking is not yet present. The current system relies on the primary retriever’s ranking only. A second-stage reranker could be added later to refine results, especially after the answer-generation layer is in place.
+Document or chunk reranking is now present. The current system includes `src/retrieve_reranked.py`, and the reranked vector path is the preferred retrieval baseline because it outperforms the plain vector and hybrid alternatives on the current benchmark.
 
 ### User query rewriting
 
@@ -225,8 +225,8 @@ Additional notable features now include a containerised local runtime with a ded
 **Clear gaps and next areas to improve:**
 
 - Ingestion pipeline orchestration (still OK rather than Good)
-- Bonus implementation categories beyond hybrid search (document reranking, query rewriting, cloud deployment) are not yet implemented
-- Docker usage and reset paths should be documented clearly enough that a reviewer can follow them without guesswork
+- Bonus implementation categories beyond hybrid search and reranking (query rewriting, cloud deployment) are not yet implemented
+- Docker usage and reset paths should remain clearly documented so a reviewer can follow them without guesswork
 
 ---
 
@@ -235,8 +235,8 @@ Additional notable features now include a containerised local runtime with a ded
 These priorities are chosen to improve project quality, maintainability, and learning value rather than to maximise any external score.
 
 - **Ingestion pipeline maturity**: Consider a lightweight orchestrator or single entry script that sequences the main ingestion and evaluation steps for easier reuse.
-- **Targeted retrieval enhancements**: Explore small, evaluation-friendly changes such as query rewriting or simple reranking, evaluated against the existing synthetic benchmark.
+- **Targeted retrieval enhancements**: Explore small, evaluation-friendly changes such as query rewriting or additional reranking experiments, evaluated against the existing synthetic benchmark.
 - **Optional deployment**: If time permits, explore a minimal cloud deployment of the Streamlit app as a bonus, without overcomplicating the core project.
-- **Container refinement**: Document Docker usage clearly in `README.md` and `docs/runbook.md`, including first-time bootstrap, normal restart, and full reset paths.
+- **Container refinement**: Keep Docker usage clearly documented in `README.md` and `docs/runbook.md`, including first-time bootstrap, normal restart, and full reset paths.
 
 This document is intended to evolve as those areas are implemented; the criterion definitions stay fixed, but the current states and notes for each area can be updated over time.
