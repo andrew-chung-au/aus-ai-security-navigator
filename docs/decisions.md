@@ -689,3 +689,59 @@ The main downside is that some vague user queries may still benefit from rewriti
 - Query rewriting is documented as an evaluated experiment that did not improve the frozen benchmark.
 - `src/rewrite_query.py` remains available for selective or future experimental use.
 - Evaluation notes and project logs should record that rewritten retrieval variants were compared but not selected as the default.
+
+## D-016 — Lightweight EC2 deployment for reviewer access
+Date: 2026-08-04  
+Status: Accepted
+
+
+### Context
+The project had a fully working local RAG pipeline with Docker Compose orchestration, but deployment and demonstration were still limited to the local environment. To satisfy the operationalisation and reproducibility expectations of the assessment rubric, and to provide a live, public demo for reviewers, a lightweight cloud deployment was required.
+
+The constraints were:
+- minimal cost, since the deployment is primarily for short-term reviewer access,
+- minimal operational complexity, avoiding separate managed database or monitoring services,
+- reuse of the existing Docker Compose runtime path rather than a full re-architecture.
+
+
+### Decision
+Deploy the project to a small AWS EC2 instance using Docker Compose as the runtime orchestration mechanism.
+
+Concretely:
+- provision a small Ubuntu EC2 instance with inbound TCP 8501 (Streamlit) and SSH,
+- install Docker and Docker Compose on the instance,
+- add temporary swap to handle memory spikes during image build and bootstrap,
+- increase the root EBS volume from 20 GB to 30 GB to accommodate Docker build cache and model downloads,
+- clone the `feature/reranked-answer-eval` branch and create `.env` with required secrets,
+- run the existing Docker Compose bootstrap and app services:
+  - `docker compose up -d postgres`
+  - `docker compose run --rm bootstrap`
+  - `docker compose up -d app`
+- expose the app at `http://<EC2_PUBLIC_IP>:8501` for reviewer access.
+
+
+### Reason
+- A live deployment demonstrates operationalisation beyond local execution and supports public reviewer access.
+- Docker Compose provides a simple, reproducible way to run PostgreSQL + pgvector and the Streamlit app together without introducing new infrastructure.
+- A small, temporary EC2 instance is sufficient for short-term demo use and keeps costs low.
+
+
+### Alternatives considered
+- Keep the project local-only and rely on screenshots or recorded demos.
+- Use a managed database service (e.g., RDS) and a separate compute service (e.g., ECS, Fargate, or a PaaS).
+- Containerise the entire offline pipeline and online app in a more complex production-like architecture.
+- Deploy to a different cloud provider or a serverless platform.
+
+
+### Trade-offs
+- The EC2 instance is sized for demo use, not long-term production load.
+- Secrets are supplied via `.env` rather than a dedicated secrets manager.
+- The app is exposed over plain HTTP on a public IP, without a custom domain or HTTPS.
+- The deployment requires manual EBS resize and swap configuration on small instances, but this is a one-time setup cost.
+
+
+### Impact
+- The project now has a working cloud-hosted demo that reviewers can access directly.
+- The same Docker Compose runtime path is validated in both local and cloud environments, improving confidence in reproducibility.
+- Documentation (README, runbook, project log) should describe this as a lightweight EC2 deployment intended for demonstration and assessment, not as a final production architecture.
+- Future hardening steps (HTTPS, custom domain, managed secrets, tighter network controls, automated restart/observability) can be added later if needed, but are not required for the current assessment.

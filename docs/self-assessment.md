@@ -10,7 +10,7 @@ This document tracks the current state of the project against a set of evaluatio
 
 - **Poor**: The problem is not described.
 - **OK**: The problem is described but briefly or unclearly.
-- **Good**: The problem is well-described and it’s clear what problem the project solves.
+- **Good**: The problem is well-described and it's clear what problem the project solves.
 
 ---
 
@@ -57,24 +57,24 @@ This document tracks the current state of the project against a set of evaluatio
 ## Monitoring
 
 - **Poor**: No monitoring.
-- **OK**: User feedback is collected OR there’s a monitoring dashboard.
-- **Good**: User feedback is collected and there’s a dashboard with at least 5 charts.
+- **OK**: User feedback is collected OR there's a monitoring dashboard.
+- **Good**: User feedback is collected and there's a dashboard with at least 5 charts.
 
 ---
 
 ## Containerization
 
 - **Poor**: No containerization.
-- **OK**: Dockerfile is provided for the main application OR there’s a docker-compose for the dependencies only.
+- **OK**: Dockerfile is provided for the main application OR there's a docker-compose for the dependencies only.
 - **Good**: Everything is in docker-compose.
 
 ---
 
 ## Reproducibility
 
-- **Poor**: No instructions on how to run the code, the data is missing, or it’s unclear how to access it.
+- **Poor**: No instructions on how to run the code, the data is missing, or it's unclear how to access it.
 - **OK**: Some instructions are provided but are incomplete, OR instructions are clear and complete, the code works, but the data is missing.
-- **Good**: Instructions are clear, the dataset is accessible, it’s easy to run the code, and the versions for all dependencies are specified.
+- **Good**: Instructions are clear, the dataset is accessible, it's easy to run the code, and the versions for all dependencies are specified.
 
 ---
 
@@ -89,7 +89,7 @@ This document tracks the current state of the project against a set of evaluatio
 
 ## Current status summary
 
-This table is a snapshot as of 2026-08-03 and is intended to be updated as the project evolves.
+This table is a snapshot as of 2026-08-04 and is intended to be updated as the project evolves.
 
 | Area | State | Notes |
 |---|---|---|
@@ -105,7 +105,7 @@ This table is a snapshot as of 2026-08-03 and is intended to be updated as the p
 | Hybrid search | Good | Implemented and evaluated via reciprocal rank fusion; improves over text but not over reranked vector on the current benchmark. |
 | Document reranking | Good | Implemented via `src/retrieve_reranked.py` and now the preferred retrieval baseline. |
 | Query rewriting | OK | Implemented and evaluated, but not adopted as the default because it did not improve the frozen benchmark. |
-| Cloud deployment | — | No deployment; local development only. |
+| Cloud deployment | Good | Lightweight EC2 deployment for reviewer access using the same Docker Compose runtime path. |
 
 ---
 
@@ -175,7 +175,7 @@ The Compose setup also includes health checks, named volumes for PostgreSQL data
 
 Reproducibility is strong. The project has clear instructions on how to run the code, a manifest-defined public dataset, pinned dependency versions, a documented local `uv` workflow, and a documented Docker Compose workflow that covers the application and database runtime. The runbook also documents downloading, extraction, cleanup, chunking, indexing, evaluation, answer generation and judging, and the Streamlit UI.
 
-Someone else should be able to rebuild the corpus and rerun the retrieval evaluation from a clean checkout, then launch the Streamlit UI either locally or via Docker Compose. This matches the Good definition for this criterion: instructions are clear, the dataset is accessible, it’s easy to run the code, and version information is specified.
+Someone else should be able to rebuild the corpus and rerun the retrieval evaluation from a clean checkout, then launch the Streamlit UI either locally or via Docker Compose. This matches the Good definition for this criterion: instructions are clear, the dataset is accessible, it's easy to run the code, and version information is specified.
 
 Evidence is in `docs/runbook.md`, `README.md`, `pyproject.toml`, `uv.lock`, `Dockerfile`, `docker-compose.yml`, `data/source_manifest_core.csv`, and `.streamlit/config.toml`.
 
@@ -197,11 +197,17 @@ Document or chunk reranking is now present. The current system includes `src/ret
 
 ### User query rewriting
 
-Query rewriting is implemented and evaluated, but it is not the default because it did not improve the frozen benchmark. The rewrite helper remains useful as an experimental tool, especially if future work explores gated rewriting for vague user questions.
+Query rewriting is implemented and evaluated, but it is not the default because it did not improve the frozen benchmark. The rewrite helper (`src/rewrite_query.py`) was tested across all four main backends (`text`, `vector`, `vector_reranked`, `hybrid`) on the 27-question synthetic set. Rewritten variants were generally weaker or only marginally different, and the strongest backend remained `vector_reranked` without rewrite. The helper is retained as an experimental tool for possible future selective or gated strategies. Evidence is in `src/rewrite_query.py`, `src/evaluate_retrieval.py`, `docs/evaluation-notes.md`, `docs/decisions.md` (D-015), and `docs/project-log.md`.
 
 ### Deployment to the cloud
 
-The project is not deployed to the cloud and does not include deployment automation or production infrastructure. That is beyond the current scope, but worth noting as potential future work.
+The project now includes a lightweight cloud deployment for reviewer access. A small Ubuntu-based AWS EC2 instance runs the same Docker Compose stack used locally:
+
+- `postgres` service with pgvector
+- `bootstrap` service for one-off schema init, chunk load, and embedding build
+- `app` service running the Streamlit UI on port 8501
+
+The deployment reuses the evaluated reranked-vector + v2 prompt-grounded pipeline and is intended as a demonstration environment rather than a hardened production setup. It does not yet include HTTPS, a custom domain, or managed secrets. Evidence is in `Dockerfile`, `docker-compose.yml`, `docs/runbook.md`, `docs/decisions.md` (D-016), and `docs/project-log.md`.
 
 ### Other extras
 
@@ -221,23 +227,23 @@ Additional notable features now include a containerised local runtime with a ded
 - Monitoring (Good)
 - Containerization (Good)
 - Reproducibility (Good)
+- Cloud deployment (Good)
 
 **Clear gaps and next areas to improve:**
 
 - Ingestion pipeline orchestration is still OK rather than Good
 - Query rewriting is implemented but intentionally not adopted as default
-- Cloud deployment is still absent
 - Docker usage and reset paths should remain clearly documented so a reviewer can follow them without guesswork
 
 ---
 
 ## Next steps
 
-These priorities are chosen to improve project quality, maintainability, and learning value rather than to maximise any external score.
+These priorities are chosen to improve project quality, maintainability, and learning value.
 
 - **Ingestion pipeline maturity**: Consider a lightweight orchestrator or single entry script that sequences the main ingestion and evaluation steps for easier reuse.
 - **Targeted retrieval enhancements**: Explore small, evaluation-friendly changes such as gated query rewriting or additional reranking experiments, evaluated against the existing synthetic benchmark.
-- **Optional deployment**: If time permits, explore a minimal cloud deployment of the Streamlit app as a bonus, without overcomplicating the core project.
+- **Optional deployment hardening**: If time permits, explore minimal hardening of the EC2 deployment (HTTPS, custom domain, managed secrets) as a bonus, without overcomplicating the core project.
 - **Container refinement**: Keep Docker usage clearly documented in `README.md` and `docs/runbook.md`, including first-time bootstrap, normal restart, and full reset paths.
 
 This document is intended to evolve as those areas are implemented; the criterion definitions stay fixed, but the current states and notes for each area can be updated over time.

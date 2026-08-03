@@ -348,7 +348,9 @@ On the current 27-question synthetic benchmark, the measured results were:
 - vector_reranked: strict Hit@5 0.9259259259259259, strict MRR 0.8888888888888888, relaxed Hit@10 0.9629629629629629, relaxed MRR 0.8935185185185185
 - hybrid: strict Hit@5 0.7777777777777778, strict MRR 0.3728395061728395, relaxed Hit@10 0.8888888888888888, relaxed MRR 0.38893298059964726
 
-On that benchmark, `vector_reranked` is the strongest retrieval backend and is treated as the preferred retrieval path for downstream RAG work. Plain vector retrieval remains the strongest non-reranked baseline, while text and hybrid remain useful comparative baselines and debugging tools. Query rewriting was also tested but did not improve the benchmark, so it remains an experimental helper rather than a default retrieval step.
+On that benchmark, `vector_reranked` is the strongest retrieval backend and is treated as the preferred retrieval path for downstream RAG work. Plain vector retrieval remains the strongest non-reranked baseline, while text and hybrid remain useful comparative baselines and debugging tools.
+
+Query rewriting was also evaluated across all four main backends (`text`, `vector`, `vector_reranked`, `hybrid`) using a dedicated LLM-based rewrite helper (`src/rewrite_query.py`). On the frozen 27-question synthetic benchmark, rewritten variants did not improve the best-performing backend and generally reduced strict metrics or produced only marginal differences. The strongest overall backend remains `vector_reranked` without rewrite. As a result, query rewriting is treated as an experimental tool, not part of the default retrieval path, and is retained for possible future selective or gated strategies (e.g. only for clearly vague or underspecified queries).
 
 ---
 
@@ -440,6 +442,7 @@ For a fresh clone, the default end-to-end path for retrieval and grounded answer
   - synthetic evaluation over `data/ground_truth_synthetic.jsonl`, and
   - the interactive UI and answer-generation flows,
 - keep the plain vector (`src/retrieve_vector.py`), text (`src/retrieve_text.py`), hybrid (`src/retrieve_hybrid.py`), and rewrite-enabled retrieval variants available as evaluated baselines and debugging tools; they operate over the same chunks corpus but are not the default for the current RAG path.
+- the rewrite-enabled variants are explicitly documented as experimental: they were compared on the frozen benchmark but not adopted, and are not used by the interactive UI or the default answer-generation pipeline.
 
 ### Answer-generation and judged datasets
 

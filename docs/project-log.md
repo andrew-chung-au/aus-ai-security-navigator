@@ -889,3 +889,47 @@ Test whether LLM-based query rewriting improves retrieval quality over the exist
 - Keep `src/rewrite_query.py` and rewritten retrieval variants as experimental tools, not defaults.
 - Update the evaluation notes, runbook, and README so they clearly state that query rewriting was tested but did not improve the frozen benchmark.
 - If rewriting is revisited later, evaluate a gated or selective rewrite strategy rather than enabling it for all queries.
+
+## 2026-08-04 — Lightweight EC2 deployment completed for reviewer access
+
+### Goal
+Deploy the project to a small, cost-aware AWS EC2 instance to provide a live, public demo for course reviewers and validate the full pipeline in a cloud environment.
+
+### What was done
+- Provisioned a small Ubuntu EC2 instance and allowed inbound TCP 8501 and SSH.
+- Installed Docker and Docker Compose, and added temporary swap to handle memory spikes.
+- Increased the root EBS volume from 20 GB to 30 GB and extended the filesystem to accommodate the Docker build cache and model downloads.
+- Cloned the `feature/reranked-answer-eval` branch and created `.env` with required secrets.
+- Ran the bootstrap pipeline in Docker:
+  - initialized PostgreSQL + pgvector
+  - loaded 350 chunks
+  - generated MiniLM embeddings for all chunks
+- Started the Streamlit app container and confirmed it was running on port 8501.
+- Verified basic functionality in the browser:
+  - AI Navigator returns grounded answers with evidence
+  - Monitoring dashboard logs conversations
+
+### Findings
+- The project runs successfully on a small EC2 instance using Docker Compose.
+- The bootstrap and embedding build are the most resource-intensive steps; they required both swap and additional disk space.
+- Once the database is initialized, the app is lightweight and responsive.
+- No changes to the core RAG logic or evaluation datasets were required for the cloud deployment.
+
+### Why
+- A live deployment demonstrates operationalisation beyond local execution.
+- Docker Compose provides a simple, reproducible way to run PostgreSQL and the app together.
+- A small, temporary EC2 instance is sufficient for short-term reviewer access and keeps costs low.
+
+### Problems / uncertainties
+- The instance is sized for demo use, not long-term production load.
+- Secrets are supplied via `.env` and are not yet managed through a dedicated secrets service.
+- The app is exposed over plain HTTP on a public IP, without a custom domain or HTTPS.
+- If the instance is stopped and restarted, the EBS volume and Docker volumes persist, but the deployment would need to be re-tested after any major changes.
+
+### Next step
+- Document the deployment approach briefly in the README and runbook as a lightweight EC2 deployment.
+- Keep the deployment as-is for the review period, then decide whether to:
+  - add HTTPS and a custom domain,
+  - introduce managed secrets,
+  - or retire the instance after assessment.
+- Treat this as a stepping stone toward more production-grade operationalisation, not a final production architecture.
