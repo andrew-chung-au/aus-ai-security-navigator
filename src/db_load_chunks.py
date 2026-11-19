@@ -57,6 +57,13 @@ ON CONFLICT (chunk_id) DO UPDATE SET
     heading_path = EXCLUDED.heading_path,
     size_audience_tag = EXCLUDED.size_audience_tag,
     role_audience_tags = EXCLUDED.role_audience_tags,
+    chunk_embedding = CASE
+        WHEN chunks.document_title IS DISTINCT FROM EXCLUDED.document_title
+          OR chunks.heading_path IS DISTINCT FROM EXCLUDED.heading_path
+          OR chunks.chunk_text IS DISTINCT FROM EXCLUDED.chunk_text
+        THEN NULL
+        ELSE chunks.chunk_embedding
+    END,
     chunk_text = EXCLUDED.chunk_text,
     chunk_chars = EXCLUDED.chunk_chars,
     chunk_words = EXCLUDED.chunk_words,

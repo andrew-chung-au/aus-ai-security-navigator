@@ -24,13 +24,13 @@ Rules:
 
     user_prompt = f"Original query:\n{user_query}"
 
-    try:
-        rewritten, usage = llm_text(
-            instructions=instructions,
-            user_prompt=user_prompt,
-        )
-    except Exception:
-        return user_query, None
+    # Errors (bad key, network, quota) propagate on purpose: a silent fallback to
+    # the original query would make "rewritten" evaluation runs look identical
+    # to the plain ones.
+    rewritten, usage = llm_text(
+        instructions=instructions,
+        user_prompt=user_prompt,
+    )
 
     rewritten = rewritten.strip()
     if not rewritten:
