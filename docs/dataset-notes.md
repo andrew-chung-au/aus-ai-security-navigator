@@ -279,9 +279,9 @@ Seeds are matched deterministically to concrete chunks in `data/chunks/chunks.js
 
 The matching process gives strong precedence to numbered list items when `numbered_item_title_guess` is present, so list-item seeds resolve to the intended passage rather than a generic sibling under the same section.
 
-Matched chunks are then passed through an LLM-based vetting step. The judge decides whether each chunk should be included for evaluation, assigns a seed quality label (high, medium, low), and may refine the passage type based on the actual chunk content.
+Matched chunks were then reviewed with an LLM-based vetting prompt that decides whether each chunk should be included, assigns a seed quality label (high, medium, low), and may refine the passage type. All 27 seeds were kept.
 
-This vetting stage filters out weak, overly narrow, or off-target passages before question generation and produces a vetted seed file such as `data/ground_truth_seeds_vetted.jsonl`.
+The vetting script and its output file (`ground_truth_seeds_vetted.jsonl`) are not in the repository, and `src/generate_ground_truth_questions.py` reads `data/seed_chunk_candidates.json` directly. See `docs/status.md`, finding 1.
 
 ### Synthetic question generation
 
@@ -401,10 +401,10 @@ These files are derived datasets layered on top of the existing chunk corpus, se
 
 ### Judge annotations
 
-To evaluate answer quality, separate judging steps run over the answer datasets and produce judged outputs. The project currently preserves two judged files:
+To evaluate answer quality, separate judging steps run over the answer datasets and produce judged outputs. The project currently preserves three judged files (the third, for the reranked default, is `answers_vector_reranked_v2_prompt_grounded_judged.jsonl`):
 
 - `data/answers/answers_vector_v1_judged.jsonl`
-- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`
+- `data/answers/answers_vector_v2_judged.jsonl`
 
 For each answer record, the judge compares the question, gold passage, and generated answer using a rubric that focuses on semantic equivalence, core idea coverage, and inclusion of important named resources when the question explicitly asks for them.
 
@@ -446,9 +446,8 @@ For a fresh clone, the default end-to-end path for retrieval and grounded answer
 
 ### Answer-generation and judged datasets
 
-- treat `data/answers/answers_vector_v2_prompt_grounded.jsonl` as the main generated-answer dataset,
-- treat `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` as the main judged output associated with the selected v2 prompt-grounded strategy,
-- retain the v1 files (`answers_vector_v1*.jsonl`) as earlier baselines for provenance and comparison rather than as current defaults.
+- treat `data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl` as the main generated-answer dataset, and its `_judged` file as the main judged output,
+- retain the plain-vector files (`answers_vector_v1*.jsonl`, `answers_vector_v2_prompt_grounded.jsonl`, `answers_vector_v2_judged.jsonl`) as earlier baselines for provenance and comparison rather than as current defaults.
 
 This reflects the project's current state: reranked vector retrieval plus the v2 prompt-grounded answer-generation pipeline is the default path for both evaluation and the interactive application, while all other retrieval modes and answer variants remain as documented, reproducible baselines layered on top of the same core dataset.
 
@@ -456,7 +455,7 @@ For setup, runtime commands, and reproduction workflows, see `docs/runbook.md`.
 
 ---
 
-## 2026-07-26 — Streamlit UI and monitoring usage of the dataset
+## Streamlit UI and monitoring usage of the dataset
 
 The current Streamlit application (`app.py`) exercises the existing dataset and retrieval stack without changing the underlying corpus, chunking, or evaluation artefacts described above.
 
@@ -475,8 +474,8 @@ Key points:
 
 ### Answer generation and grounding
 
-- The evaluated answer artifacts (`answers_vector_v2_prompt_grounded.jsonl`) were generated using the plain vector baseline for historical comparison.
-- However, the live AI Navigator UI dynamically uses the upgraded `vector_reranked` backend at query time alongside the winning v2 prompt to maximize final answer quality.
+- The frozen answer artefact `answers_vector_v2_prompt_grounded.jsonl` was generated with plain vector retrieval for historical comparison.
+- The AI Navigator UI and the current default answer set use `vector_reranked` retrieval with the v2 prompt.
 - At query time, retrieved chunks are passed to the v2 prompt, and the returned answer includes:
   - a groundedness flag,
   - a set of `answer_chunk_ids` for grounding,

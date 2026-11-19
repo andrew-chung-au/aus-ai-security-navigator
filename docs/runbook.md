@@ -1,25 +1,21 @@
 # Runbook
 
-This project is designed so another person can recreate the Python environment, rebuild the ACSC corpus and PostgreSQL retrieval index, regenerate or reuse evaluation artefacts, rerun comparative retrieval evaluation, launch the interactive app locally, and reproduce the lightweight cloud deployment used for reviewer access.
+Commands and notes for working with this project: rebuilding the corpus and PostgreSQL index, re-running retrieval and answer evaluation, and running the Streamlit app with Docker Compose. For an overview, results and known issues see the [README](../README.md) and [status](status.md).
 
-The workflow combines manifest-defined source ingestion, scripted transformations, documented manual checkpoints, versioned generated artefacts, a Docker Compose runtime path, and a small AWS EC2 deployment for live demonstration. This document focuses on environment, inputs, execution steps, manual checkpoints, deployment steps, and outputs rather than re-explaining the project rationale.
+Commands here were checked against the code and Compose file but not all were executed during the 2026-11-19 documentation review (see [status](status.md#verification-log-documentation-review-2026-11-19)).
 
 ---
 
-## Reviewer verification path
+## Fastest path: run the app
 
-For a quick assessment without rebuilding the project:
+```bash
+cp .env.example .env          # then set LLM_API_KEY; check LLM_BASE_URL and MODEL_ID
+docker compose up -d postgres
+docker compose run --rm bootstrap
+docker compose up -d app      # http://localhost:8501
+```
 
-1. Open the live application: [AUS AI Security Navigator](http://54.167.24.156:8501/).
-2. Test the **AI Navigator** with an ACSC AI security question.
-3. Apply optional organisation-size and role filters.
-4. Inspect the displayed answer, source evidence, and chunk metadata.
-5. Open the **Monitoring Dashboard** to verify feedback collection and the five monitoring charts.
-6. Return to the [README assessment evidence map](../README.md#assessment-evidence) to locate repository evidence for each rubric criterion.
-
-The live deployment uses the same selected default path as the documented local runtime: reranked-vector retrieval plus v2 prompt-grounded answer generation.
-
-For full local reproduction, continue with the sections below.
+This uses the committed `data/chunks/chunks.jsonl`. Sections 3.5 onwards cover rebuilding it.
 
 ---
 
@@ -52,17 +48,22 @@ This creates the Python environment and installs dependencies at the pinned vers
 
 These files are committed to the repository and should not be edited casually; they are part of the reproducibility contract.
 
-### Database configuration
+### Environment variables
 
-Create a local `.env` file in the project root:
+Copy `.env.example` to `.env` in the project root and edit it. `.env` is git-ignored; do not commit it.
 
-```bash
-DATABASE_URL=postgresql://<user>:<password>@localhost:<port>/<database>
-```
+| Variable | Needed for | Notes |
+|---|---|---|
+| `DATABASE_URL` | every database script and the app | Example value targets the Compose `postgres` service on `localhost:5432`. |
+| `LLM_API_KEY` | `generate_answers.py`, `judge_answers.py`, `generate_ground_truth_questions.py`, `rewrite_query.py`, `evaluate_retrieval.py`, `app.py` | Not needed for download, extraction, chunking, database scripts or the plain retrieval scripts. |
+| `LLM_BASE_URL` | same | Passed as `base_url` to the OpenAI SDK. `.env.example` uses a Gemini URL; see [status finding 8](status.md#known-issues-and-findings). |
+| `MODEL_ID` | same | Required. `app.py` and `llm_client.get_default_model()` raise if unset. |
 
-Do not commit `.env` or database credentials. A `.env.example` file should be committed with the required variable name and a placeholder value.
+`src/test_structured_output.py` is a manual check that the configured model supports structured output (`chat.completions.parse`). Run it with `uv run python src/test_structured_output.py` after setting the variables above.
 
-Before running database scripts:
+Docker Compose requires the `.env` file to exist (`env_file`) even for the bootstrap step, which does not use the LLM variables.
+
+For the Compose `postgres` service, `DATABASE_URL` from `.env.example` works as is. Before running database scripts against another server:
 
 1. Ensure the target PostgreSQL database exists.
 2. Ensure the connected user can create or enable the `vector` extension.
@@ -92,12 +93,14 @@ This disables Streamlit file watching and automatic reruns on save. The setting 
 
 The vector retrieval pipeline uses the sentence-transformers model configured in `src/db_build_embeddings.py` and `src/retrieve_vector.py`.
 
-Record the exact identifier used by the code here before treating a run as a strict baseline:
+As set in the code:
 
 ```text
 Embedding model: sentence-transformers/all-MiniLM-L6-v2
 Embedding dimension: 384
 Embedding normalisation: L2-normalised before storage and query-time comparison
+Embedded text: document title + heading path breadcrumb + chunk text
+Reranker: cross-encoder/ms-marco-MiniLM-L-6-v2 over the top 20 vector candidates (chunk text only)
 Distance metric: cosine distance through pgvector
 ```
 
@@ -411,36 +414,17 @@ Output records include:
 - `score_margin`
 - `selection_strategy`
 
-### 3.9 Vet seed passages
+### 3.9 Vet seed passages (not scripted)
 
-Vet matched seed passages with the project's LLM-assisted seed-review workflow.
+The 27 matched seed passages were reviewed with an LLM prompt (inclusion decision, `high`/`medium`/`low` quality, suggested passage type, reason). All 27 were kept; see the 2026-07-23 entry in `docs/project-log.md`.
 
-The vetting process uses the selected `candidate_chunk` and records whether the passage is appropriate for synthetic question generation. The output is:
+**This step is not reproducible from the repository.** No vetting script is committed, `data/ground_truth_seeds_vetted.jsonl` is not committed, and `src/generate_ground_truth_questions.py` reads `data/seed_chunk_candidates.json` directly with no inclusion filter. See [status finding 1](status.md#known-issues-and-findings).
 
-```text
-data/ground_truth_seeds_vetted.jsonl
-```
-
-Vetted records include fields such as:
-
-- `seed_id`
-- `chunk_id`
-- `include_for_eval`
-- `seed_quality`
-- `suggested_passage_type`
-- `reason`
-
-Use the exact repository entry point that performs seed vetting. If the vetting workflow is currently a one-off invocation rather than a committed script, document the exact command or add a dedicated script before describing this stage as fully reproducible.
-
-#### LLM-assisted pipeline limitation
-
-Seed vetting uses an external LLM service, so regenerated judgements may vary across model versions, provider behaviour, and runs.
-
-The committed vetted-seed output is the canonical input for reproducing the current benchmark. Regenerating it should be treated as creating a new evaluation-data version, not as an expectation of byte-for-byte identical results.
+Regenerating questions with a different model or run will produce a different benchmark. Treat that as a new benchmark version, not a repeat.
 
 ### 3.10 Generate synthetic questions
 
-Generate A → Q* synthetic retrieval questions from vetted seed passages:
+Generate A → Q* synthetic retrieval questions from the matched seed passages:
 
 ```bash
 uv run python src/generate_ground_truth_questions.py
@@ -448,14 +432,14 @@ uv run python src/generate_ground_truth_questions.py
 
 The script:
 
-- reads vetted seeds from:
+- reads matched seeds from:
 
 ```text
-data/ground_truth_seeds_vetted.jsonl
+data/seed_chunk_candidates.json
 ```
 
 - uses the matched `candidate_chunk` and audience metadata as generation context
-- generates one realistic question per included seed
+- generates one realistic question per seed
 - writes outputs to:
 
 ```text
@@ -480,7 +464,7 @@ The synthetic benchmark is seed-anchored: each question is generated from a vett
 
 It supports controlled retrieval comparison because each question has traceable gold evidence. It does not by itself establish performance on naturally phrased user questions, incomplete audience context, ambiguous requests, adversarial wording, or multi-source information needs.
 
-The committed file:
+The committed file (27 questions):
 
 ```text
 data/ground_truth_synthetic.jsonl
@@ -551,12 +535,9 @@ The script:
 - writes vectors into the pgvector `chunk_embedding` column
 - logs progress while processing chunks
 
-Run this script whenever:
+The script only embeds rows where `chunk_embedding IS NULL`. Run it after a fresh database initialisation.
 
-- the chunk corpus changes
-- the embedded text representation changes
-- the embedding model changes
-- embeddings have not yet been built after a fresh database initialisation
+`db_load_chunks.py` sets `chunk_embedding` to NULL for any chunk whose title, heading path or text changed, so after reloading changed chunks just rerun this script. (Before 2026-11-19 it did not, so a database loaded earlier may hold stale vectors.) If the embedding model or the embedded-text format in `build_embedding_text` changes, nothing detects it: run `UPDATE chunks SET chunk_embedding = NULL;` or recreate the database (`docker compose down -v`) first. See [status finding 2](status.md#known-issues-and-findings).
 
 ### 3.14 Run manual retrieval checks
 
@@ -633,7 +614,7 @@ The evaluator:
 data/ground_truth_synthetic.jsonl
 ```
 
-- evaluates:
+- evaluates (with and without query rewriting):
   - `src/retrieve_text.py`
   - `src/retrieve_vector.py`
   - `src/retrieve_reranked.py`
@@ -653,7 +634,7 @@ Relaxed metrics allow partial relevance where a retrieved chunk shares:
 
 The evaluator prints a backend-specific metric summary so results can be compared under the same corpus, question set, audience metadata, and relevance rules.
 
-The evaluator focuses on the four main backends (`text`, `vector`, `vector_reranked`, `hybrid`). Rewritten variants (`text_rewritten`, `vector_rewritten`, `vector_reranked_rewritten`, `hybrid_rewritten`) were also implemented and compared in project experiments, but they are not part of the primary metric summary reported here. They remain available for inspection and future selective-rewrite experiments.
+The evaluator runs eight backends: the four above plus their rewritten variants (`text_rewritten`, `vector_rewritten`, `vector_reranked_rewritten`, `hybrid_rewritten`). Rewritten variants call the LLM through `src/rewrite_query.py`, which raises if the LLM call fails (a missing or invalid API key stops the run). Metrics are printed to stdout as JSON.
 
 ### 3.16 Export retrieval debug records
 
@@ -664,7 +645,7 @@ uv run python src/evaluate_retrieval.py \
   --debug-output data/eval/retrieval_debug.jsonl
 ```
 
-Use the actual configured output path consistently across the repository. If the current script uses a different filename, update this command and all documentation to match it.
+`data/eval/retrieval_debug.jsonl` is the committed output (216 rows: 8 backends x 27 questions). An older 3-backend file, `data/eval_retrieval_debug.jsonl`, is also in the repository.
 
 The debug output contains one record per question and backend, including:
 
@@ -811,14 +792,14 @@ uv run python src/judge_answers.py \
   --output data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl
 ```
 
-(Adjust command-line flags to match the actual `judge_answers.py` interface.)
+Flags: `--answers-input`, `--chunks-input`, `--output`, plus a model override and a request delay (see `--help`).
 
 ##### Frozen baseline judged outputs
 
 The project preserves earlier judged outputs as frozen baselines:
 
 - `data/answers/answers_vector_v1_judged.jsonl`
-- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl`
+- `data/answers/answers_vector_v2_judged.jsonl` (the file name differs from the `answers_vector_v2_prompt_grounded_judged.jsonl` default in `src/judge_answers_v2.py`)
 
 Each judged record extends the original answer fields with:
 
@@ -829,7 +810,7 @@ Each judged record extends the original answer fields with:
 - `judge_gold_heading_path`
 - `judge_usage`
 
-These should be treated as historical reference points tied to their respective answer-generation variants.
+These should be treated as historical reference points tied to their respective answer-generation variants. The three judged files were produced with different versions of the judge prompt (`judge_answers_v1.py`, `judge_answers_v2.py`, `judge_answers.py`) and the files do not record which; see [status finding 3](status.md#known-issues-and-findings).
 
 #### 3.18.3 Preserved script versions
 
@@ -847,17 +828,21 @@ The current `src/generate_answers.py` has been updated to use reranked vector re
 
 #### 3.18.4 Optional analysis outputs
 
-Aggregations over the judged files, such as the proportion of `good` answers by `target_size`, `target_role`, or `source_id`, can be computed in separate analysis scripts and regenerated as needed. These are derived outputs and are not treated as primary corpus artefacts.
+There is no committed analysis script. The `good` counts in the README were obtained by counting `judge_score` in each judged file, for example:
 
-When comparing across answer-generation variants, treat the plain-vector artefacts (`answers_vector_v1*` and `answers_vector_v2_prompt_grounded*`) as frozen baselines, and the reranked-vector artefacts (`answers_vector_reranked_v2_prompt_grounded*`) as the current default for evaluation and comparison.
+```bash
+python3 -c "import json,collections,sys; print(collections.Counter(json.loads(l)['judge_score'] for l in open(sys.argv[1])))" data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl
+```
 
-### 3.19 Interactive Streamlit UI, Docker runtime, and EC2 deployment
+When comparing across answer-generation variants, treat the plain-vector artefacts (`answers_vector_v1*` and `answers_vector_v2*`) as frozen baselines, and the reranked-vector artefacts (`answers_vector_reranked_v2_prompt_grounded*`) as the current default for evaluation and comparison.
 
-In addition to CLI scripts and notebooks used for evaluation, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer. The same Docker Compose runtime path is used both for local execution and for the lightweight EC2 deployment used to provide live reviewer access.
+### 3.19 Interactive Streamlit UI and Docker runtime
+
+In addition to CLI scripts and notebooks used for evaluation, the project exposes the current default RAG path through a Streamlit application with a lightweight monitoring layer. Compose is the runtime path for the app. The offline pipeline (download, extraction, review, chunking, evaluation) runs locally with `uv`, not in containers.
 
 #### 3.19.1 First-time application bootstrap
 
-From the project root, the standard reproducible runtime path for the application uses Docker Compose. This same Compose-based setup is used both for local execution and for the lightweight EC2 deployment used to provide live reviewer access.
+From the project root, with `.env` in place:
 
 1. **Start the database:**
    ```bash
@@ -889,8 +874,7 @@ The app provides two tabs:
 
 - **Monitoring Dashboard**
   - summary metrics for total conversations, average latency, total estimated cost, and feedback counts
-  - charts for response time per query, cost per query, token usage per request, and conversations per hour
-  - audience breakdown charts for queries by organisation size and queries by role
+  - seven charts: response time per query, cost per query, feedback counts, token usage per request, conversations per hour, queries by organisation size, queries by role
   - a recent-conversations table with question, answer snippet, audience filters, latency, cost, and total tokens
 
 #### 3.19.2 Normal restart and full reset
@@ -931,52 +915,26 @@ The Docker Compose setup provides a clean boundary between the offline evaluatio
 
 The containerized app depends on the exact same reviewed corpus snapshot and heading-aware chunking output in `data/chunks/chunks.jsonl`. It logs conversations and feedback, but it does not modify the underlying corpus, seeds, or evaluation datasets.
 
-Another practitioner can therefore:
+To run the app on a rebuilt corpus:
 
 1. Rebuild or restore the reviewed corpus and regenerate `data/chunks/chunks.jsonl` locally.
-2. Run the Docker Compose bootstrap (`docker compose run --rm bootstrap`) to spin up the database and load the corpus into the containerized environment.
-3. Start the app via Docker Compose (`docker compose up -d app`).
-4. Interact with the AI Navigator knowing it is backed by the exact same reproducible reranked-vector and v2 prompt-grounded pipeline.
+2. Run `docker compose run --rm bootstrap`. The Docker build context includes `data/chunks/`, so rebuild the image (`docker compose build bootstrap app`) after changing the file.
+3. Start the app with `docker compose up -d app`.
 
-The live app uses the same non-rewritten reranked-vector retrieval path selected by evaluation; rewrite-enabled retrieval variants remain available only for offline experimentation and debugging.
+If the database volume already holds embeddings from an older corpus, see the note in section 3.13.
 
-#### 3.19.5 Lightweight EC2 deployment
+The app uses the same non-rewritten reranked-vector retrieval path selected by evaluation; rewrite-enabled retrieval variants remain available only for offline experimentation and debugging.
 
-For reviewer-facing demonstration, the application was also deployed to a small Ubuntu-based AWS EC2 instance using the same Docker Compose runtime path.
+#### 3.19.5 Cloud deployment notes (EC2, historical)
 
-Typical deployment steps were:
+For a time the Compose stack was run on a small Ubuntu EC2 instance (inbound SSH and TCP 8501, plain HTTP, `.env` on the instance). That instance is not maintained. These notes record what was needed in case it is repeated:
 
-1. Provision a small EC2 instance and allow inbound:
-   - SSH
-   - TCP 8501 for Streamlit
+1. Provision an instance and open TCP 8501 and SSH. Prefer restricting 8501 to known addresses.
+2. Install Docker and the Compose plugin.
+3. Clone the repository, create `.env`.
+4. Run `docker compose up -d postgres`, `docker compose run --rm bootstrap`, `docker compose up -d app`.
 
-2. Install Docker and Docker Compose on the instance.
-
-3. Clone the repository and create a `.env` file with the required secrets and database configuration.
-
-4. Start the database service:
-   ```bash
-   docker compose up -d postgres
-   ```
-
-5. Run the one-off bootstrap service:
-   ```bash
-   docker compose run --rm bootstrap
-   ```
-
-6. Start the Streamlit app service:
-   ```bash
-   docker compose up -d app
-   ```
-
-7. Access the application at:
-   ```text
-   http://<EC2_PUBLIC_IP>:8501
-   ```
-
-During deployment, the small instance required temporary swap to handle memory spikes during build and bootstrap, and the root EBS volume was increased from 20 GB to 30 GB to accommodate Docker build cache and model downloads.
-
-This deployment is intended as a lightweight demonstration environment rather than a production architecture. It reuses the same evaluated reranked-vector + v2 prompt-grounded pipeline, but does not yet add production hardening such as HTTPS, a custom domain, or managed secrets.
+The small instance needed temporary swap for the image build and bootstrap, and the root EBS volume was raised from 20 GB to 30 GB for the build cache and model downloads. Do not expose `docker-compose.yml` as is to the internet: it publishes PostgreSQL port 5432 with a fixed `postgres`/`postgres` password and the app has no authentication (see [status finding 11](status.md#known-issues-and-findings)).
 
 ---
 
@@ -1012,7 +970,6 @@ data/chunks/spotcheck.json
 ```text
 data/ground_truth_seed_draft.json
 data/seed_chunk_candidates.json
-data/ground_truth_seeds_vetted.jsonl
 data/ground_truth_synthetic.jsonl
 ```
 
@@ -1047,7 +1004,7 @@ data/eval/retrieval_debug.jsonl
 data/answers/answers_vector_v1.jsonl
 data/answers/answers_vector_v1_judged.jsonl
 data/answers/answers_vector_v2_prompt_grounded.jsonl
-data/answers/answers_vector_v2_prompt_grounded_judged.jsonl
+data/answers/answers_vector_v2_judged.jsonl
 data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl
 data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl
 ```
@@ -1073,40 +1030,18 @@ Dockerfile
 
 These files provide the optional Streamlit interface over the reranked vector and v2 prompt-grounded answer-generation path, plus a lightweight monitoring dashboard backed by the `conversations` and `feedback` tables.
 
-### Cloud deployment state
-
-```text
-AWS EC2 instance running the Docker Compose application stack
-Public Streamlit endpoint on port 8501
-PostgreSQL + pgvector running in the Compose-managed database container
-```
-
-This deployment is operational state rather than a committed repository artefact.
-
 ---
 
-## 5. What a reviewer can reproduce
+## 5. What can be reproduced from a clean clone
 
-From a clean clone, a reviewer can:
+| Goal | How | Depends on |
+|---|---|---|
+| Run the app | Fastest path at the top | Docker, LLM key |
+| Rebuild the index from the committed chunks | `db_init.py`, `db_load_chunks.py`, `db_build_embeddings.py` | PostgreSQL + pgvector, model download |
+| Rebuild chunks from the reviewed corpus | Restore snapshot (3.3), then `prepare_chunks.py` | Nothing external |
+| Re-run retrieval evaluation | `evaluate_retrieval.py` | Index, LLM key (rewrite variants), results may differ slightly if the chunks differ |
+| Re-run answer generation and judging | `generate_answers.py`, `judge_answers.py` | LLM key; outputs will differ from the committed files (LLM non-determinism, model changes) |
+| Rebuild the corpus from ACSC | Sections 3.1 to 3.4 | Live ACSC pages (may have changed), manual review |
+| Regenerate the benchmark | Not fully possible; see 3.9 | |
 
-1. Create the pinned Python environment with `uv sync`.
-2. Configure a PostgreSQL database connection using `DATABASE_URL`.
-3. Use the committed `.streamlit/config.toml` when running the Streamlit app.
-4. Choose a corpus path:
-   - **Strict v1 baseline**: restore the reviewed Markdown snapshot under `data/corpus_snapshots/` into `data/processed/`.
-   - **Fresh corpus rebuild**: download and extract ACSC sources and perform a new manual Markdown review for a fresh corpus.
-5. Regenerate heading-aware chunks with `src/prepare_chunks.py` and inspect sampled chunk records from `data/chunks/spotcheck.*` for QA.
-6. Recreate deterministic seed-to-chunk matching and candidate files with `src/resolve_seed_draft_ids.py`.
-7. Reuse committed LLM-vetted seed and synthetic-question artefacts to reproduce the current benchmark, or regenerate them as a new evaluation-data version.
-8. Initialise and populate the local PostgreSQL retrieval index for offline evaluation by running `db_init.py` → `db_load_chunks.py` → `db_build_embeddings.py`.
-9. Build pgvector embeddings using the configured sentence-transformers model if they are not already present.
-10. Run text, vector, reranked vector, and hybrid retrieval over manual queries with the same audience-filter semantics as described in this document.
-11. Rerun comparative retrieval evaluation over the same synthetic question set to reproduce the reported retrieval metrics.
-12. Export per-question debug records to inspect backend-specific rankings, scores, relevance labels, and audience context.
-13. Reproduce the selected reranked-vector retrieval baseline, and rerun the derived answer-generation and judge stage using the preserved v1 and v2 answer artefacts and scripts.
-14. Launch the interactive application using Docker Compose, executing the containerized bootstrap sequence (`docker compose up -d postgres`, `docker compose run --rm bootstrap`, `docker compose up -d app`).
-15. Interact with the Streamlit AI Navigator and Monitoring Dashboard locally via `http://localhost:8501`.
-16. Reproduce the lightweight reviewer-facing deployment on a small AWS EC2 instance using the same Docker Compose runtime path, including bootstrap and app startup.
-17. Verify that the deployed app exposes the same reranked-vector retrieval and v2 prompt-grounded answer-generation path selected by evaluation, rather than a separate ad hoc configuration.
-
-This runbook intentionally treats the evaluated retrieval baseline as the core reproducible path. The grounded answer-generation and judge layer, and the interactive Streamlit UI with monitoring, are derived stages built on top of the existing retrieval artefacts and can be rerun separately using the preserved v1 and v2 outputs, scripts, Docker Compose configurations, `.streamlit/config.toml`, and the EC2 deployment steps described above.
+The seed-matching script (`resolve_seed_draft_ids.py`) is deterministic and can be re-run against the committed chunks.

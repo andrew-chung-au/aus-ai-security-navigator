@@ -202,7 +202,7 @@ Skipping these steps would simplify the pipeline but:
   - `candidate_chunk`
   - `candidate_debug`
   - `match_score`, `selection_confidence`, `selection_strategy`
-- An LLM judging step produces a vetted seed file (e.g. `ground_truth_seeds_vetted.jsonl`) with:
+- An LLM judging step produced a vetted seed file (e.g. `ground_truth_seeds_vetted.jsonl`, not committed to the repository) with:
   - `seed_id`, `chunk_id`
   - `include_for_eval`
   - `seed_quality` (`high`, `medium`, `low`)
@@ -231,7 +231,7 @@ Moving from a JSONL-only corpus to a PostgreSQL-backed index:
 
 - makes retrieval reproducible and queryable with standard SQL,
 - simplifies audience-aware filtering and debugging against concrete tables,
-- aligns with course monitoring patterns while staying lightweight enough for a small project.
+- stays lightweight enough for a small project, and the same database can later hold monitoring tables.
 
 Using PostgreSQL’s `tsvector`/`tsquery` full-text search and ranking (`ts_rank` plus `websearch_to_tsquery`) provides:
 
@@ -289,7 +289,7 @@ The project needs a practical, inspectable retrieval baseline before adding more
 - supports audience-aware queries (small vs medium vs large/gov, consumer vs builder),
 - provides a clear interface that can later be reused by the LLM-facing answer generation logic.
 
-Using `websearch_to_tsquery` gives intuitive search semantics for human-style queries, while `ts_rank` provides a simple relevance score for ordering results. Keeping `k` tunable (default 5, but overrideable) mirrors the course pattern and allows experimentation with different top‑k settings for evaluation and answer quality.
+Using `websearch_to_tsquery` gives intuitive search semantics for human-style queries, while `ts_rank` provides a simple relevance score for ordering results. Keeping `k` tunable (default 5, but overrideable) follows common retrieval-tool conventions and allows experimentation with different top‑k settings for evaluation and answer quality.
 
 ### Alternatives considered
 - Use a custom scoring function over raw text without PostgreSQL full-text search.
@@ -520,7 +520,7 @@ The benchmark is still small, and the final comparison depends on an LLM judge r
 - `src/generate_answers.py` becomes the default answer-generation script.
 - `src/generate_answers_v1.py` is retained for provenance and comparison.
 - `data/answers/answers_vector_v2_prompt_grounded.jsonl` becomes the primary generated-answer artefact.
-- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` becomes the primary judged output associated with the selected answer-generation strategy.
+- `data/answers/answers_vector_v2_judged.jsonl` (originally planned as `…_prompt_grounded_judged.jsonl`) became the judged output for the plain-vector v2 baseline. D-014 later moved the primary artefacts to the reranked-vector files.
 - README, project log, and reproducibility notes should describe v2 as the selected answer-generation approach and v1 as the earlier baseline.
 
 ### Notes
@@ -535,7 +535,7 @@ The project had already selected vector retrieval as the preferred retrieval bac
 
 A second issue was reproducibility of the vector retrieval path. Initialising the database schema and loading chunk text alone was not sufficient to make vector retrieval work, because embeddings still needed to be generated and written to `chunk_embedding`. When that final step was skipped, vector retrieval returned no chunks and the UI could not produce grounded answers.
 
-The project also needed a lightweight monitoring approach that fit the existing stack and could support rubric-facing demonstration without introducing a separate observability platform.
+The project also needed a lightweight monitoring approach that fit the existing stack and could support demonstration and inspection without introducing a separate observability platform.
 
 ### Decision
 Expose the selected vector-based RAG pipeline through a Streamlit UI, store conversation and feedback telemetry in PostgreSQL, and treat the three-step database bootstrap sequence as mandatory for a working system.
@@ -561,7 +561,7 @@ Concretely:
 
 ### Consequences
 - The Streamlit app becomes the primary interactive entry point for demonstrating the project end to end.
-- Users and graders can issue natural-language questions, inspect grounded answers, and review retrieved evidence directly in the UI.
+- Users can issue natural-language questions, inspect grounded answers, and review retrieved evidence directly in the UI.
 - The project gains lightweight operational visibility through persisted conversation logs, feedback, and dashboard views without requiring separate infrastructure.
 - Reusing PostgreSQL keeps the architecture simple, but it also couples monitoring data to the same database environment as the retrieval corpus.
 - Vector retrieval is now explicitly dependent on completing all three bootstrap steps; this adds one more required command, but makes failures easier to diagnose and reproduce.
@@ -575,9 +575,9 @@ Date: 2026-07-26
 Status: Accepted
 
 ### Context
-The project had already reached a point where the selected retrieval and answer-generation path could be demonstrated through the Streamlit UI, but the runtime setup still depended on a locally managed Python environment and an ad hoc PostgreSQL container. That made the application harder for reviewers to start consistently and left the runtime environment less reproducible than the documented data and evaluation workflow.
+The project had already reached a point where the selected retrieval and answer-generation path could be demonstrated through the Streamlit UI, but the runtime setup still depended on a locally managed Python environment and an ad hoc PostgreSQL container. That made the application harder for others to start consistently and left the runtime environment less reproducible than the documented data and evaluation workflow.
 
-The project also needed to improve its containerization story under the assessment rubric without forcing every offline corpus-preparation and evaluation step into the same runtime path.
+The project also needed a containerised runtime without forcing every offline corpus-preparation and evaluation step into the same runtime path.
 
 ### Decision
 Adopt Docker Compose as the standard reproducible runtime path for the application stack.
@@ -595,8 +595,8 @@ Concretely:
 - Attempt to containerise the full end-to-end offline pipeline and online app in one unified runtime path immediately.
 
 ### Consequences
-- Reviewers can launch the core application stack with a small set of Docker Compose commands instead of manually setting up Postgres and the Python runtime.
-- The project now has a clear containerized path for the end-to-end interactive system, improving both reproducibility and the containerization story.
+- Anyone can launch the core application stack with a small set of Docker Compose commands instead of manually setting up Postgres and the Python runtime.
+- The project now has a clear containerized path for the end-to-end interactive system, improving reproducibility.
 - The `bootstrap` step makes the required DB initialisation order explicit, but also adds a one-time startup command for fresh environments.
 - The offline pipeline remains partly outside Docker for now, which keeps the project simpler while preserving the existing `uv`-based development workflow.
 
@@ -635,6 +635,9 @@ Reranking adds some latency relative to plain vector retrieval, but the quality 
 - `src/evaluate_retrieval.py` should treat `vector_reranked` as the main retrieval backend for comparison and reporting.
 - Documentation should describe the default path as vector search plus cross-encoder reranking.
 - If answer generation is regenerated later, it should use reranked retrieval rather than plain vector retrieval.
+
+### Later observation (2026-11-19)
+When answer generation was rerun with reranked retrieval, the judged score stayed at 26/27 (same as plain vector with the v2 prompt). The retrieval-metric gain did not show up as a judged answer-quality gain on this benchmark. See `docs/evaluation-notes.md`, section 3.4.
 
 ## D-015 — Query rewriting evaluated but not adopted as the default retrieval path
 Date: 2026-08-03  
@@ -690,13 +693,13 @@ The main downside is that some vague user queries may still benefit from rewriti
 - `src/rewrite_query.py` remains available for selective or future experimental use.
 - Evaluation notes and project logs should record that rewritten retrieval variants were compared but not selected as the default.
 
-## D-016 — Lightweight EC2 deployment for reviewer access
+## D-016 — Lightweight EC2 deployment for course review (historical)
 Date: 2026-08-04  
 Status: Accepted
 
 
 ### Context
-The project had a fully working local RAG pipeline with Docker Compose orchestration, but deployment and demonstration were still limited to the local environment. To satisfy the operationalisation and reproducibility expectations of the assessment rubric, and to provide a live, public demo for reviewers, a lightweight cloud deployment was required.
+The project had a fully working local RAG pipeline with Docker Compose orchestration, but deployment and demonstration were still limited to the local environment. To meet the course's deployment expectation and give reviewers a live demo, a lightweight cloud deployment was required.
 
 The constraints were:
 - minimal cost, since the deployment is primarily for short-term reviewer access,
@@ -718,6 +721,8 @@ Concretely:
   - `docker compose run --rm bootstrap`
   - `docker compose up -d app`
 - expose the app at `http://<EC2_PUBLIC_IP>:8501` for reviewer access.
+
+Status note (2026-11-19): the review period is over and no instance is maintained; this record is kept for history and as a deployment recipe.
 
 
 ### Reason
@@ -743,5 +748,5 @@ Concretely:
 ### Impact
 - The project now has a working cloud-hosted demo that reviewers can access directly.
 - The same Docker Compose runtime path is validated in both local and cloud environments, improving confidence in reproducibility.
-- Documentation (README, runbook, project log) should describe this as a lightweight EC2 deployment intended for demonstration and assessment, not as a final production architecture.
-- Future hardening steps (HTTPS, custom domain, managed secrets, tighter network controls, automated restart/observability) can be added later if needed, but are not required for the current assessment.
+- Documentation describes this as a historical demo deployment, not a production architecture.
+- Future hardening steps (HTTPS, custom domain, managed secrets, tighter network controls, automated restart/observability) can be added later if needed, but were not done.
