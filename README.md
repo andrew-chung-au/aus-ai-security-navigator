@@ -1,461 +1,235 @@
 # AUS AI Security Navigator
 
-A lightweight retrieval-augmented generation (RAG) project that helps Australian organisations navigate official Australian Cyber Security Centre (ACSC) artificial intelligence security guidance.
+A retrieval-augmented generation (RAG) assistant for official Australian Cyber Security Centre (ACSC) guidance on securing artificial intelligence. A user asks a question, optionally narrows it by organisation size and AI role, and gets an answer built only from retrieved ACSC passages, with the source chunks shown alongside it.
 
-It combines a curated ACSC HTML and PDF corpus, PostgreSQL/pgvector retrieval, reranking, grounded LLM answers, and a Streamlit interface so users can ask natural-language questions and inspect the source evidence behind each response.
+The project covers the whole path: sourcing and cleaning documents, audience-aware chunking, a PostgreSQL/pgvector index, four retrieval strategies compared on a synthetic benchmark, LLM answer generation and judging, and a Streamlit app with conversation logging and a monitoring dashboard. It is maintained as a portfolio piece and a base for further experiments.
 
-## Live demo
+**Status:** working prototype. It runs end to end locally and under Docker Compose. It has no automated test suite, no authentication, and has been evaluated only on a small synthetic benchmark. See [Limitations](#limitations-and-known-issues).
 
-**Try the deployed application:** [AUS AI Security Navigator — Streamlit app](http://54.167.24.156:8501/)
+## Problem
 
-The deployed app includes:
+ACSC publishes AI security advice across several web pages and PDFs, written for different audiences (small business, medium business, large enterprise/government/critical infrastructure, and people who use or build AI systems). Finding the passage that applies to a particular organisation is slow, and a general-purpose LLM may answer without citing or matching the ACSC guidance.
 
-- **AI Navigator** — ask ACSC AI security questions, apply organisation-size and role filters, and inspect retrieved evidence.
-- **Monitoring Dashboard** — view conversation telemetry, feedback, latency, estimated cost, token usage, and audience-segment charts.
+This project indexes a curated set of ACSC documents with audience metadata, so retrieval can be filtered by who the guidance is for, and so each answer can be traced back to specific source chunks.
 
-> The app is deployed as a lightweight EC2 demonstration environment for peer review. It uses the same Docker Compose runtime and evaluated default path documented in this repository: **reranked-vector retrieval plus v2 prompt-grounded answers**.
+## What it does
 
-## Reviewer quick start
+- **Corpus:** 10 core ACSC documents (7 HTML pages, 3 PDFs), listed with provenance and audience tags in [`data/source_manifest_core.csv`](data/source_manifest_core.csv). Five further documents are recorded in [`data/source_manifest_boundary.csv`](data/source_manifest_boundary.csv) but not indexed.
+- **Chunking:** heading-aware chunking of the reviewed Markdown produces 350 chunks (`chunking_version` `v1`) in [`data/chunks/chunks.jsonl`](data/chunks/chunks.jsonl). Each chunk carries its heading path, document title, a size audience tag and role audience tags.
+- **Retrieval:** four backends over the same PostgreSQL table: full-text (`ts_rank`), vector (MiniLM embeddings, pgvector cosine distance), vector plus cross-encoder reranking, and hybrid (reciprocal rank fusion of text and vector). An optional LLM query-rewrite helper exists but is not used by default.
+- **Answering:** the retrieved chunks go to an LLM with a prompt that requires grounded answers. The model returns the answer, a `grounded` flag and the chunk IDs it used. The app discards claimed IDs that were not retrieved, and replaces the answer with "I don't know based on the retrieved context." if it claims grounding but cites no valid chunk.
+- **App:** Streamlit UI with an AI Navigator tab (filters, top-k slider, answer, per-chunk evidence panel, thumbs up/down) and a Monitoring Dashboard tab.
+- **Monitoring:** every question is logged to PostgreSQL (`conversations`) with latency, token counts and estimated cost; feedback goes to `feedback`. The dashboard has summary metrics, seven charts and a recent-conversations table.
+- **Evaluation:** a 27-question synthetic benchmark with known gold chunks, retrieval metrics (Hit@k, MRR), and LLM-as-judge scoring of generated answers.
 
-Use this short path to assess the project without first rebuilding the pipeline:
+## Architecture
 
-1. Open the [live Streamlit app](http://54.167.24.156:8501/).
-2. In **AI Navigator**, ask a question such as:
+```mermaid
+flowchart LR
+    subgraph Offline["Offline pipeline (src/, run with uv)"]
+        M[source manifest CSV] --> D[download_sources.py]
+        D --> X[extract_text_html.py / extract_text_pdf.py]
+        X --> R[manual Markdown review]
+        R --> S[(corpus snapshot)]
+        R --> C[prepare_chunks.py]
+        C --> J[chunks.jsonl]
+        J --> L[db_load_chunks.py]
+        L --> E[db_build_embeddings.py]
+    end
 
-   ```text
-   How can a small business reduce the risk of data leakage when using AI tools?
-   ```
+    subgraph DB["PostgreSQL 17 + pgvector"]
+        T[(chunks: fts + vector 384)]
+        CV[(conversations)]
+        FB[(feedback)]
+    end
+    L --> T
+    E --> T
 
-3. Select `small_business` as the organisation-size filter and `ai_consumer` as the role filter.
-4. Read the answer, then expand the evidence area to inspect retrieved ACSC chunks, document titles, headings, audience tags, and retrieval metadata.
-5. Open the **Monitoring Dashboard** to inspect conversation telemetry, feedback collection, and monitoring charts.
-6. Use the assessment table below to locate the repository evidence for each evaluation criterion.
+    subgraph App["Streamlit app (app.py)"]
+        Q[question + size/role filters] --> V[vector top-20]
+        V --> RR[cross-encoder rerank, top-k]
+        RR --> G[LLM grounded answer]
+        G --> UI[answer + evidence + feedback]
+    end
+    T --> V
+    G --> CV
+    UI --> FB
+```
 
-## Assessment evidence
-
-| Evaluation criterion | Target | Evidence |
-|---|---:|---|
-| Problem description | 2/2 | [Problem statement](#problem-statement) |
-| Retrieval flow | 2/2 | [Retrieval and evaluation](#retrieval-and-evaluation), `src/`, `data/chunks/chunks.jsonl` |
-| Retrieval evaluation | 2/2 | [Retrieval and evaluation](#retrieval-and-evaluation), [`docs/evaluation-notes.md`](docs/evaluation-notes.md) |
-| LLM evaluation | 2/2 | [`docs/evaluation-notes.md`](docs/evaluation-notes.md), `data/answers/` |
-| Interface | 2/2 | [Live Streamlit app](http://54.167.24.156:8501/), `app.py` |
-| Ingestion pipeline | 1/2 | [Workflow](#workflow), [`docs/runbook.md`](docs/runbook.md), `src/download_sources.py` |
-| Monitoring | 2/2 | [Live Monitoring Dashboard](http://54.167.24.156:8501/), `app.py` |
-| Containerization | 2/2 | `Dockerfile`, `docker-compose.yml`, [`docs/runbook.md`](docs/runbook.md) |
-| Reproducibility | 2/2 | [Setup](#setup), [Usage](#usage), [`docs/runbook.md`](docs/runbook.md), `pyproject.toml`, `uv.lock` |
-| Hybrid search | +1 | `src/retrieve_hybrid.py`, [`docs/evaluation-notes.md`](docs/evaluation-notes.md) |
-| Document reranking | +1 | `src/retrieve_reranked.py`, [`docs/evaluation-notes.md`](docs/evaluation-notes.md) |
-| User query rewriting | +1 | `src/rewrite_query.py`, [`docs/evaluation-notes.md`](docs/evaluation-notes.md) |
-| Cloud deployment | +2 | [Live Streamlit app](http://54.167.24.156:8501/), [`docs/runbook.md`](docs/runbook.md) |
-
-The ingestion pipeline is intentionally assessed as **1/2** because it is scripted and semi-automated rather than orchestrated with a dedicated workflow tool such as Airflow, Prefect, dlt, or Kestra.
-
-## Project includes
-
-- A curated ACSC AI security corpus with source provenance and audience metadata
-- Evaluated text, vector, reranked-vector, and hybrid retrieval
-- Evaluated grounded answer-generation variants with an LLM-as-a-judge layer
-- An interactive Streamlit UI with evidence inspection and feedback capture
-- A monitoring dashboard with telemetry and charts
-- A reproducible `uv`-based workflow and Docker Compose runtime
-- A [live EC2 deployment](http://54.167.24.156:8501/) for reviewer access
-- Decision records, evaluation notes, a reproducibility runbook, and rubric-based self-assessment
-
----
-
-## Problem statement
-
-Australian organisations have access to a growing set of ACSC guidance on artificial intelligence, but the material is distributed across multiple documents, formats, and audience-specific publications. This makes it harder to quickly locate the right guidance for a specific question, such as how a small business should adopt AI securely, what supply-chain risks apply to an AI system, or what controls matter for AI-enabled cyber attacks.
-
-A general LLM can provide broad advice, but it may miss the specific ACSC publication, audience context, and operational detail needed for a trustworthy answer. This project addresses that gap by building a retrieval-augmented assistant over a curated ACSC AI guidance corpus. Users can ask natural-language questions and receive answers grounded in retrieved ACSC source material.
-
-The project is designed for questions where retrieval adds value over generic generation, particularly when the answer depends on document-specific guidance, organisation size, role context, or operational recommendations.
-
----
-
-## Project scope
-
-This project focuses on a small, curated ACSC AI guidance corpus rather than a broad crawl of cyber-security content. The goal is to create a retrieval flow that is narrow enough to evaluate clearly while still covering key AI security guidance for different organisation types and use contexts.
-
-The current corpus includes:
-
-- Core ACSC AI HTML guidance pages
-- Attached ACSC PDF guidance on defending against AI-enabled cyber attacks
-- A manifest-defined source list with provenance and audience metadata
-- A reviewed Markdown corpus used for chunking, retrieval, and evaluation, preserved as a versioned snapshot under `data/corpus_snapshots/`
-
-Boundary documents are recorded for possible later expansion but are excluded from the current index build.
-
-For the current corpus description and boundaries, see:
-
-- [`docs/dataset-notes.md`](docs/dataset-notes.md)
-- [`data/source_manifest_core.csv`](data/source_manifest_core.csv)
-
-For strict reproduction of the current corpus, restore the reviewed Markdown snapshot from `data/corpus_snapshots/v1_2026-07-25/` into `data/processed/` before running downstream steps. For a fresh corpus rebuild, rerun download, extraction, and manual review as described in [`docs/runbook.md`](docs/runbook.md).
-
----
-
-## Documentation map
-
-Use this README as the high-level project entry point. The documents below provide implementation, evaluation, and reproducibility details.
-
-| Document | Purpose |
+| Layer | Technology |
 |---|---|
-| [`docs/runbook.md`](docs/runbook.md) | Step-by-step instructions for rebuilding the corpus, index, evaluation outputs, Docker runtime, and EC2 deployment |
-| [`docs/evaluation-notes.md`](docs/evaluation-notes.md) | Retrieval and answer-generation evaluation setup, metrics, results, and limitations |
-| [`docs/dataset-notes.md`](docs/dataset-notes.md) | Corpus scope, source provenance, chunking, audience model, and evaluation-data design |
-| [`docs/decisions.md`](docs/decisions.md) | Accepted architectural and pipeline decisions |
-| [`docs/self-assessment.md`](docs/self-assessment.md) | Rubric-based self-assessment, evidence, scores, and next steps |
-| [`docs/project-log.md`](docs/project-log.md) | Chronological implementation history and major changes |
+| Language / tooling | Python 3.13, `uv` (lockfile committed) |
+| Storage and search | PostgreSQL 17 with `pgvector` (`pgvector/pgvector:pg17` image), `tsvector` full-text search, `psycopg` 3 |
+| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions, normalised) over title, heading breadcrumb and chunk text |
+| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` over the top 20 vector candidates |
+| LLM access | OpenAI Python SDK against a configurable OpenAI-compatible endpoint; `.env.example` targets Gemini (`gemini-3.1-flash-lite`). Structured output via Pydantic. |
+| Extraction | `requests`, BeautifulSoup/`lxml` (HTML), `pypdf` (PDF) |
+| UI | Streamlit, Plotly, pandas |
+| Runtime | Docker, Docker Compose (`postgres`, one-off `bootstrap`, `app`) |
 
----
+Embedding and reranker models run locally on CPU. Only answer generation, judging, question generation and query rewriting call an external LLM.
 
-## Audience-aware design
+## Evaluation results
 
-The project treats ACSC AI guidance as an audience-aware corpus. The source manifest separates audience context into two dimensions:
+All numbers are on the same 27 synthetic questions that were used to choose the defaults, so they are comparative evidence, not an estimate of real-world accuracy.
 
-- `size_audience_tag`
-  - `small_business`
-  - `medium_business`
-  - `large_enterprise_gov_critical`
-  - `all_sizes`
-- `role_audience_tags`
-  - `ai_consumer`
-  - `ai_builder`
+**Benchmark construction.** 27 hand-picked seed passages (spanning all three organisation sizes and both roles) are matched to concrete chunks by a deterministic scoring script. An LLM then writes one user-style question per passage. See [`docs/evaluation-notes.md`](docs/evaluation-notes.md) and [`docs/dataset-notes.md`](docs/dataset-notes.md).
 
-These fields are propagated into each chunk and can be used as filters in retrieval and evaluation.
+**Retrieval** (strict = exact gold `chunk_id` in top 5; relaxed = same source and leaf heading in top 10). Recomputed from the committed [`data/eval/retrieval_debug.jsonl`](data/eval/retrieval_debug.jsonl):
 
-For the full audience model and chunk schema, see [`docs/dataset-notes.md`](docs/dataset-notes.md).
+| Backend | Strict Hit@5 | Strict MRR | Relaxed Hit@10 | Relaxed MRR |
+|---|---:|---:|---:|---:|
+| Text (full-text search) | 0.259 | 0.099 | 0.259 | 0.099 |
+| Hybrid (RRF) | 0.778 | 0.373 | 0.889 | 0.389 |
+| Vector | 0.852 | 0.750 | 0.926 | 0.761 |
+| **Vector + rerank (default)** | **0.926** | **0.889** | **0.963** | **0.894** |
 
----
+Query rewriting by an LLM did not improve the best backend (vector + rerank: strict MRR 0.889 without rewriting, 0.818 with), so it is not in the default path.
 
-## Retrieval and evaluation
+**Answer quality** (LLM judge, `good`/`bad`, from the committed judged files):
 
-The project includes an evaluation-data pipeline based on curated seed passages and synthetic question generation:
+| Answer set | Retrieval | Prompt | `good` |
+|---|---|---|---:|
+| `answers_vector_v1_judged.jsonl` | vector | v1 | 22/27 |
+| `answers_vector_v2_judged.jsonl` | vector | v2 grounded | 26/27 |
+| `answers_vector_reranked_v2_prompt_grounded_judged.jsonl` | vector + rerank | v2 grounded | 26/27 |
 
-1. Define a curated seed manifest in `data/ground_truth_seed_draft.json` describing important passages and audience slices to test.
-2. Match each seed to a concrete chunk in `data/chunks/chunks.jsonl`.
-3. Vet matched chunks with an LLM judge to produce a vetted seed file.
-4. Generate synthetic evaluation questions from vetted passages and store them in `data/ground_truth_synthetic.jsonl`.
+The v1 to v2 change is a prompt change. Adding reranking did not change the judged score (26/27 both ways); its benefit is visible in the retrieval metrics only. The three files were judged with different versions of the judge prompt and the generator and judge are the same model, so treat these as indicative. Details in [Limitations](#limitations-and-known-issues).
 
-This keeps the evaluation pipeline traceable: each test question can be linked back to a concrete `chunk_id`, source document, and audience slice.
+## Quick start
 
-Retrieval is evaluated across four backends:
+You need Docker with Compose, and an API key for an OpenAI-compatible LLM endpoint.
 
-- Text retrieval
-- Vector retrieval
-- Reranked-vector retrieval
-- Hybrid retrieval
+```bash
+cp .env.example .env
+# edit .env: set LLM_API_KEY, and check LLM_BASE_URL and MODEL_ID for your provider
 
-On the current 27-question synthetic benchmark, **reranked-vector retrieval** is the strongest-performing backend and is used as the default for downstream RAG flows and the interactive UI.
-
-Query rewriting was evaluated across all four primary backends. It did not improve retrieval on the current benchmark, so it is retained as an experimental helper rather than being used in the default application path.
-
-For detailed retrieval and answer-evaluation results, see:
-
-- [`docs/evaluation-notes.md`](docs/evaluation-notes.md)
-- [`docs/runbook.md`](docs/runbook.md)
-- [`docs/dataset-notes.md`](docs/dataset-notes.md)
-
----
-
-## Workflow
-
-The project supports two reproducible workflow modes:
-
-1. **Strict baseline reproduction** — restore the reviewed Markdown snapshot from `data/corpus_snapshots/v1_2026-07-25/` into `data/processed/`, then rebuild chunks, the PostgreSQL index, embeddings, and evaluation outputs.
-2. **Fresh corpus rebuild** — download current ACSC sources, extract them into Markdown, manually review the Markdown, create or update a reviewed corpus snapshot, and then rebuild downstream artefacts.
-
-At a high level, the workflow is:
-
-1. Define and maintain the source manifest.
-2. Download source documents from public ACSC URLs.
-3. Extract HTML and PDF content into local Markdown files.
-4. Manually review and clean extracted content.
-5. Preserve reviewed Markdown as a versioned corpus snapshot.
-6. Chunk the cleaned Markdown corpus into retrieval-ready records.
-7. Spot-check sampled chunks for quality assurance.
-8. Create and match evaluation seeds to concrete chunks.
-9. Vet candidate seed passages with an LLM judge.
-10. Generate synthetic ground-truth questions.
-11. Build the PostgreSQL retrieval index with full-text and pgvector support.
-12. Run text, vector, reranked-vector, and hybrid retrieval plus retrieval evaluation.
-13. Generate grounded answers and judge them against gold passages.
-14. Expose the evaluated default path through the Streamlit UI and monitoring dashboard.
-
-Scripts perform downloading, extraction, chunk preparation, deterministic seed matching, question generation, database loading, embedding generation, retrieval, evaluation, answer generation, and judging. For complete executable instructions, see [`docs/runbook.md`](docs/runbook.md).
-
----
-
-## Repository structure
-
-```text
-.
-├── data/                          # Datasets, chunks, answer artefacts, evaluation outputs
-│   ├── raw/                       # Downloaded ACSC HTML and PDF sources
-│   ├── processed/                 # Extracted and reviewed Markdown
-│   ├── corpus_snapshots/          # Versioned reviewed-Markdown backups
-│   ├── answers/                   # Generated and judged LLM answers
-│   └── chunks/                    # Retrieval-ready JSONL corpus
-├── docs/                          # Runbook, decisions, evaluations, and project records
-│   ├── runbook.md                 # Start here for full local reproduction
-│   ├── dataset-notes.md
-│   ├── evaluation-notes.md
-│   ├── decisions.md
-│   └── self-assessment.md
-├── src/                           # Python ingestion, indexing, retrieval, evaluation, and LLM scripts
-├── .streamlit/                    # Streamlit configuration
-├── app.py                         # Streamlit UI and monitoring dashboard
-├── docker-compose.yml             # Containerised application and database runtime
-├── Dockerfile                     # Application container definition
-├── pyproject.toml                 # Python dependencies and project settings
-├── uv.lock                        # Locked dependency versions
-└── README.md
+docker compose up -d postgres          # PostgreSQL + pgvector
+docker compose run --rm bootstrap      # create tables, load 350 chunks, build embeddings
+docker compose up -d app               # Streamlit on http://localhost:8501
 ```
 
----
+The first bootstrap and first query download the two Hugging Face models (cached in the `huggingface_cache` volume). `docker compose down -v` removes the database and model cache.
 
-## Retrieval corpus
+The bootstrap needs no LLM key, but Compose reads `.env`, so the file must exist.
 
-The retrieval-ready corpus is written to:
-
-```text
-data/chunks/chunks.jsonl
-```
-
-Each chunk includes the core fields needed for provenance, retrieval, and evaluation:
-
-- `chunk_id`
-- `source_id`
-- `source_file`
-- `chunk_index`
-- `chunking_version`
-- `document_title`
-- `heading_path`
-- `size_audience_tag`
-- `role_audience_tags`
-- `chunk_text`
-
-Diagnostic fields such as `chunk_chars`, `chunk_words`, and `chunk_lines` are also stored as formal database columns for QA and chunk inspection.
-
-For full chunking behaviour, including heading-aware chunking, list and table handling, enumerated-item splitting, and document-specific patterns, see [`docs/dataset-notes.md`](docs/dataset-notes.md).
-
----
-
-## Setup
-
-This project uses Python, `uv`, PostgreSQL, and pgvector.
-
-### Requirements
-
-- Python 3.13
-- `uv`
-- PostgreSQL
-- PostgreSQL `pgvector` extension
-- A configured `DATABASE_URL`
-
-### Install dependencies
+### Local development without the app container
 
 ```bash
 uv sync
-```
-
-Dependencies and exact versions are specified in:
-
-- `pyproject.toml`
-- `uv.lock`
-
-Create a local `.env` file in the project root:
-
-```bash
-DATABASE_URL=postgresql://<user>:<password>@localhost:<port>/<database>
-```
-
-For the complete environment, Docker Compose, and deployment instructions, see [`docs/runbook.md`](docs/runbook.md).
-
----
-
-## Usage
-
-For the complete workflow, including snapshot restore, downloading, extraction, cleanup, chunking, seed matching, question generation, database loading, embeddings, retrieval, evaluation, answer generation, and judging, see [`docs/runbook.md`](docs/runbook.md).
-
-### Strict baseline reproduction
-
-To reproduce the current reviewed corpus without repeating extraction and manual cleanup:
-
-```bash
-mkdir -p data/processed
-cp -iv data/corpus_snapshots/v1_2026-07-25/*.md data/processed/
-```
-
-Then rebuild the retrieval corpus and index:
-
-```bash
-uv run python src/prepare_chunks.py
-uv run python src/spotcheck_chunks.py
+docker compose up -d postgres          # or any PostgreSQL with pgvector; match DATABASE_URL
 uv run python src/db_init.py
 uv run python src/db_load_chunks.py
 uv run python src/db_build_embeddings.py
-```
-
-### Fresh corpus rebuild
-
-A minimal fresh rebuild looks like this:
-
-1. Download sources:
-
-   ```bash
-   uv run python src/download_sources.py
-   ```
-
-2. Extract HTML and PDF sources:
-
-   ```bash
-   uv run python src/extract_text_html.py data/raw/html
-   uv run python src/extract_text_pdf.py data/raw/pdf
-   ```
-
-3. Manually review the Markdown in `data/processed/`, then preserve the reviewed Markdown as a new corpus snapshot.
-
-4. Prepare chunks:
-
-   ```bash
-   uv run python src/prepare_chunks.py
-   ```
-
-5. Build and load the database:
-
-   ```bash
-   uv run python src/db_init.py
-   uv run python src/db_load_chunks.py
-   uv run python src/db_build_embeddings.py
-   ```
-
-6. Run retrieval with a natural-language user question:
-
-   ```bash
-   uv run python src/retrieve_text.py "How can a small business reduce the risk of data leakage when using AI tools?"
-   uv run python src/retrieve_vector.py "How can a small business reduce the risk of data leakage when using AI tools?"
-   uv run python src/retrieve_reranked.py "How can a small business reduce the risk of data leakage when using AI tools?"
-   uv run python src/retrieve_hybrid.py "How can a small business reduce the risk of data leakage when using AI tools?"
-   ```
-
-   Query rewriting is available through `src/rewrite_query.py`, but rewritten retrieval variants are experimental and are not part of the default pipeline.
-
-7. Generate and judge answers:
-
-   ```bash
-   uv run python src/generate_answers.py
-   uv run python src/judge_answers.py
-   ```
-
----
-
-## Interactive UI and monitoring
-
-### Live deployment
-
-A reviewer-facing deployment is available at:
-
-**[http://54.167.24.156:8501/](http://54.167.24.156:8501/)**
-
-The deployed application runs the same Docker Compose-based stack and selected default RAG path as this repository.
-
-### Local app run
-
-From the project root, after preparing the database:
-
-```bash
 uv run python -m streamlit run app.py
 ```
 
-### Docker Compose run
-
-The project supports a containerised application and database runtime:
+Try the retrieval backends from the command line:
 
 ```bash
-docker compose up -d postgres
-docker compose run --rm bootstrap
-docker compose up -d app
+uv run python src/retrieve_reranked.py \
+  "How can a small business reduce the risk of data leakage when using AI tools?" \
+  --size-tag small_business --role-tag ai_consumer --limit 5
 ```
 
-The app provides:
+The same script pattern works for `retrieve_text.py`, `retrieve_vector.py` and `retrieve_hybrid.py`.
 
-- **AI Navigator**
-  - Free-text questions about ACSC AI security guidance
-  - Optional organisation-size and role filters
-  - Reranked-vector retrieval as the default backend
-  - Grounded answers generated using the v2 prompt-grounded answer pipeline
-  - An evidence panel showing chunk IDs, titles, headings, audience tags, and retrieval metadata
+### Re-running evaluation
 
-- **Monitoring Dashboard**
-  - Summary metrics for conversation counts, latency, estimated cost, and feedback
-  - Charts for response time, cost, token usage, conversations over time, and queries by audience segment
-  - A recent-conversations table with question, answer snippet, filters, latency, cost, and tokens
+```bash
+uv run python src/evaluate_retrieval.py --debug-output data/eval/retrieval_debug.jsonl   # needs DB, embeddings and LLM key
+uv run python src/generate_answers.py     # needs LLM key; overwrites the reranked answers file
+uv run python src/judge_answers.py        # needs LLM key; overwrites the judged file
+```
 
-The application logs to PostgreSQL tables:
+`evaluate_retrieval.py` always runs the four query-rewrite variants too. If the LLM call fails (for example a bad key) the run stops with the error rather than falling back to the original query. Metrics print to stdout as JSON. Rebuilding the corpus from the ACSC websites, the full pipeline order, and Docker details are in [`docs/runbook.md`](docs/runbook.md).
 
-- `conversations` — per-interaction telemetry including question, answer, model, audience filters, tokens, latency, estimated cost, and timestamp
-- `feedback` — per-conversation thumbs-up and thumbs-down feedback
+## Configuration
 
-These monitoring tables do not modify the underlying corpus, evaluation data, or answer artefacts.
+Set in `.env` (see [`.env.example`](.env.example)). `.env` is git-ignored.
 
-For local and EC2 deployment details, see [`docs/runbook.md`](docs/runbook.md).
+| Variable | Used by | Notes |
+|---|---|---|
+| `DATABASE_URL` | all database scripts, app | Local default targets the Compose `postgres` service on `localhost:5432`. Compose overrides it for the `app` and `bootstrap` containers. |
+| `LLM_API_KEY` | answer generation, judging, question generation, query rewriting, app | Not needed for retrieval-only scripts or bootstrap. |
+| `LLM_BASE_URL` | same | Passed to the OpenAI SDK as `base_url`. |
+| `MODEL_ID` | same | Required (no code default). Cost estimates exist only for models listed in [`src/pricing.py`](src/pricing.py); other models log $0.00. |
 
----
+## Repository layout
 
-## Reproducibility
+```text
+app.py                 Streamlit app: AI Navigator + Monitoring Dashboard
+src/                   Pipeline, retrieval, evaluation and LLM scripts (flat modules, run as scripts)
+  download_sources.py, extract_text_*.py, prepare_chunks.py, spotcheck_chunks.py
+  db*.py               schema, chunk loading, embedding build, connection helper
+  retrieve_*.py        text, vector, reranked, hybrid, rewritten retrieval
+  resolve_seed_draft_ids.py, generate_ground_truth_questions.py
+  generate_answers.py, judge_answers.py   current answer generation and judging
+  *_v1.py, judge_answers_v2.py            earlier versions kept for provenance
+  evaluate_retrieval.py, llm_client.py, pricing.py, rewrite_query.py
+data/
+  source_manifest_core.csv / _boundary.csv
+  corpus_snapshots/    reviewed Markdown v1 with checksums (treat as immutable)
+  processed/           working copy of reviewed Markdown
+  chunks/              chunks.jsonl and chunk spot-check samples
+  ground_truth_*.json* seed definitions, match candidates, 27 synthetic questions
+  answers/             generated and judged answer sets
+  eval/                per-question retrieval debug output
+docs/                  runbook, evaluation notes, dataset notes, decisions, status, project log
+Dockerfile, docker-compose.yml, .streamlit/config.toml, pyproject.toml, uv.lock
+```
 
-This project is designed to be reproducible from a clean checkout:
+## Design decisions
 
-- Source documents are public ACSC HTML and PDF documents.
-- The corpus is defined in `data/source_manifest_core.csv`.
-- Dependency versions are pinned in `pyproject.toml` and `uv.lock`.
-- A reviewed corpus snapshot is available for strict baseline reproduction.
-- A fresh rebuild path is documented for downloading, extraction, manual review, and snapshot creation.
-- Retrieval chunks propagate organisation-size and role tags from the source manifest.
-- Evaluation seeds are matched deterministically before LLM-based vetting.
-- Synthetic questions are generated from vetted seed passages and preserved for retrieval evaluation.
-- PostgreSQL with pgvector supports text, vector, reranked-vector, and hybrid retrieval over the same chunk corpus.
-- Answer-generation and judge annotations are preserved as derived artefacts.
-- Docker Compose provides a reproducible runtime for the database, bootstrap process, and Streamlit app.
-- A lightweight EC2 deployment provides a live environment for reviewer access.
+The full records are in [`docs/decisions.md`](docs/decisions.md). The ones that shaped the project most:
 
-For detailed reproduction steps, see [`docs/runbook.md`](docs/runbook.md).
+- **Audience as metadata, not separate indexes.** Manifest-level `size_audience_tag` and `role_audience_tags` are copied onto every chunk and used as SQL filters. A size filter also returns chunks tagged `all_sizes`.
+- **Manual review checkpoint plus immutable snapshot.** Extracted Markdown is hand-corrected for extraction noise, then frozen under `data/corpus_snapshots/`. Fresh downloads can differ from the reviewed corpus, so the snapshot is what makes the benchmark reproducible.
+- **Heading-aware chunking.** Chunks follow document structure (enumerated items, risk/mitigation pairs, tables) rather than fixed windows, so gold passages map to meaningful units.
+- **PostgreSQL for everything.** One database holds full-text search, vectors and monitoring tables, which keeps the stack small.
+- **Choose defaults from measurements.** Four retrievers and two answer prompts were compared before picking vector + rerank and the v2 grounded prompt. Query rewriting was built, measured, and left out because it did not help.
+- **Compose for the runtime, `uv` for the offline pipeline.** Corpus preparation and evaluation are not containerised.
 
----
+## Limitations and known issues
 
-## Status
+Short list; the full backlog with evidence is in [`docs/status.md`](docs/status.md).
 
-The project currently includes:
+- **No automated tests.** `src/test_structured_output.py` is a manual connectivity check against the LLM endpoint, not a test suite. Nothing runs in CI.
+- **Small, synthetic, self-selected benchmark.** 27 questions generated by an LLM from seed passages I chose, used both to compare and to choose defaults. No held-out set and no human-labelled questions.
+- **Judge caveats.** Generation, question writing and judging all use the same model. Three judge prompt versions exist and the committed judged files do not record which produced them. One `bad` verdict out of 27 means a single answer separates the v2 variants from 100%.
+- **Benchmark pipeline is only partly reproducible from the repo.** The LLM seed-vetting step has no committed script or output file, and the question generator reads `data/seed_chunk_candidates.json` directly.
+- **Embedding model changes need a manual refresh.** `db_load_chunks.py` now clears the embedding of any chunk whose title, headings or text changed, but switching the embedding model requires `UPDATE chunks SET chunk_embedding = NULL;` before rerunning `db_build_embeddings.py`.
+- **No vector index.** Nearest-neighbour search is an exact scan, which is fine for 350 chunks and would need HNSW/IVFFlat at scale.
+- **Not production-ready.** The app has no authentication or rate limiting, logs user questions and answers in plain text with no retention policy, and Compose uses a fixed `postgres`/`postgres` password and publishes port 5432. A previous EC2 demo served plain HTTP.
+- **Scope is narrow.** Ten documents, English only, single-turn Q&A, no conversation memory.
 
-- Corpus scoping and source-manifest definition
-- Source downloading and extraction
-- Manual Markdown cleanup and a reviewed corpus snapshot
-- Audience-aware schema design and heading-aware chunk preparation
-- Chunk spot-checking for quality assurance
-- Evaluation seed design, matching, vetting, and synthetic question generation
-- PostgreSQL schema initialisation, chunk loading, and MiniLM-based embeddings through pgvector
-- Evaluated text, vector, reranked-vector, and hybrid retrieval over a synthetic benchmark
-- Evaluated answer-generation variants with an LLM-as-a-judge layer
-- A selected default path: **reranked-vector retrieval plus v2 prompt-grounded answers**
-- A Streamlit-based AI Navigator and monitoring dashboard
-- Conversation and feedback logging in PostgreSQL
-- Docker Compose runtime for local and reproducible execution
-- A live EC2 deployment for reviewer access: [http://54.167.24.156:8501/](http://54.167.24.156:8501/)
+## Roadmap ideas
 
-Planned work includes:
+None of these are started.
 
-- Formal benchmark evaluation of additional retrieval variants, such as additional reranking approaches or selective query rewriting
-- Potential production hardening of the cloud deployment, including HTTPS, a custom domain, and managed secrets
+- Add a test suite (retrieval filters, chunk-ID validation, cost estimate, chunking) and a CI workflow.
+- Build a larger evaluation set with human-written questions and a held-out split; calibrate the judge against human labels.
+- Commit the seed-vetting step as a script and make the benchmark pipeline reproducible end to end.
+- Fix the embedding refresh behaviour and add a vector index if the corpus grows.
+- Try gated query rewriting (only for vague queries), other embedding models, and rerank candidate-pool sizes against the existing benchmark.
+- Expand the corpus with the boundary documents and add a refresh process for updated ACSC pages.
+- Harden deployment: HTTPS, secrets management, auth, configurable database credentials.
 
----
+## Documentation
 
-## Notes on ACSC material
+| Document | Contents |
+|---|---|
+| [`docs/runbook.md`](docs/runbook.md) | Step-by-step commands for every pipeline stage, Docker runtime and deployment notes |
+| [`docs/status.md`](docs/status.md) | Current state, known issues with evidence, unverified items, backlog |
+| [`docs/evaluation-notes.md`](docs/evaluation-notes.md) | Benchmark construction, metrics, results, caveats |
+| [`docs/dataset-notes.md`](docs/dataset-notes.md) | Corpus scope, chunk schema and chunking rules, audience model |
+| [`docs/decisions.md`](docs/decisions.md) | Decision records D-001 to D-016 |
+| [`docs/project-log.md`](docs/project-log.md) | Chronological build log (2026-07-21 to 2026-08-04) |
 
-This project may reference or be inspired by guidance published by the Australian Cyber Security Centre (ACSC).
+## History and demo
 
-Any ACSC content is used descriptively for educational and research purposes only. The project is not affiliated with, sponsored by, or endorsed by the ACSC, the Australian Signals Directorate (ASD), or the Australian Government.
+The project was built between 21 July and 4 August 2026; the build log is in [`docs/project-log.md`](docs/project-log.md). A short-lived EC2 instance served the Compose stack over HTTP as a demo; assume it is offline. No hosted demo is currently maintained.
 
-Where ACSC guidance is referenced, it is attributed and linked to the original public source material.
+## Licence and attribution
+
+Code is released under the [MIT licence](LICENSE). The ACSC documents are published by the Australian Cyber Security Centre; the snapshot and chunks in this repository are derived from public pages for research and education, and each chunk records its source. This project is not affiliated with, sponsored by, or endorsed by the ACSC, the Australian Signals Directorate or the Australian Government. Check the ACSC's own terms before reusing its content.

@@ -933,3 +933,22 @@ Deploy the project to a small, cost-aware AWS EC2 instance to provide a live, pu
   - introduce managed secrets,
   - or retire the instance after assessment.
 - Treat this as a stepping stone toward more production-grade operationalisation, not a final production architecture.
+
+
+## 2026-11-19 — Documentation repositioned after course completion
+
+### Goal
+Make the repository useful as a portfolio project and as a base for further work, instead of a course submission.
+
+### What was done
+- Rewrote `README.md` around the problem, design, results, setup and limitations. Removed the course rubric evidence table, score claims and reviewer quick-start.
+- Removed `docs/self-assessment.md` (rubric scoring and criterion definitions). It remains in git history. Its strengths, gaps and next steps are now in the README and `docs/status.md`.
+- Added `docs/status.md`: current state, resume steps, verification log, known issues with evidence, backlog.
+- Updated the runbook (environment variables, corrected file names, honest status of the seed-vetting step, embedding refresh caveat, EC2 steps marked historical), evaluation notes (metrics table, answer-set comparison, limitations), dataset notes and decision records (course and rubric wording removed, stale file names fixed).
+- No code, dependency or configuration changes.
+
+### Findings
+Recorded in `docs/status.md`. The main ones: seed vetting is not reproducible from the repo, embeddings are not refreshed when chunks change, three judge prompt versions with no record of which scored which file, and reranking did not change the judged answer score.
+
+### Notes on earlier entries
+Entries above are left as written and use the course-era framing (reviewers, assessment). The 2026-08-04 EC2 entry describes an instance that is no longer maintained.

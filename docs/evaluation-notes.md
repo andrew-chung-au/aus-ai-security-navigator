@@ -1,17 +1,17 @@
 # Evaluation notes
 
-This document records how retrieval and answer-generation are evaluated in the project, what benchmarks and metrics are used, and which approaches are currently selected as defaults. It is intended for reviewers and future contributors who want to understand the evaluation setup and findings without digging through code or logs.
+This document records how retrieval and answer-generation are evaluated in the project, what benchmarks and metrics are used, and which approaches are currently selected as defaults. It is meant for anyone (including me, after a break) who needs the evaluation setup and findings without reading code or logs. Known weaknesses of the evaluation are collected in section 6.
 
 ---
 
-## Assessment summary
+## Summary
 
 - **Retrieval approaches evaluated:** text, vector, reranked vector, and hybrid.
 - **Selected retrieval approach:** reranked vector, based on the current 27-question synthetic benchmark.
 - **Answer-generation approaches evaluated:** baseline and v2 prompt-grounded variants, with LLM-as-a-judge evaluation.
 - **Selected RAG path:** reranked-vector retrieval plus v2 prompt-grounded answers.
 - **Experimental feature:** query rewriting was evaluated across retrieval backends but was not selected for the default path.
-- **Live implementation:** [http://54.167.24.156:8501/](http://54.167.24.156:8501/)
+- **Reliability of these results:** limited. 27 LLM-generated questions, one benchmark used for both comparison and selection, one LLM family as generator and judge. See section 6.
 
 ---
 
@@ -42,10 +42,10 @@ Retrieval evaluation is based on a synthetic benchmark built in three stages:
 
 - **Seed–chunk matching and vetting**:
   - `src/resolve_seed_draft_ids.py` matches seeds to concrete chunks in `data/chunks/chunks.jsonl`, producing `data/seed_chunk_candidates.json` with candidate chunks, scores, and debug information.
-  - An LLM-based vetting step consumes these candidates and writes `data/ground_truth_seeds_vetted.jsonl`, marking which seeds to include for evaluation and assigning a seed-quality label.
+  - An LLM-based vetting step was applied to these candidates (include/exclude and a quality label). All 27 seeds were kept. The vetting script and its output file are not in the repository, and the question generator reads `data/seed_chunk_candidates.json` directly.
 
 - **Synthetic question generation**:
-  - `src/generate_ground_truth_questions.py` generates one user-like question per vetted seed, using an A → Q* pattern.
+  - `src/generate_ground_truth_questions.py` generates one user-like question per seed, using an A → Q* pattern.
   - The output (`data/ground_truth_synthetic.jsonl`) records, for each question:
     - `question_id`, `question`
     - `source_id`, `chunk_id`
@@ -56,7 +56,7 @@ This benchmark is small (currently 27 questions) and intentionally seed-anchored
 
 ### 2.2 Retrieval methods
 
-Five retrieval methods are evaluated over the same benchmark, including rewritten variants for comparison:
+Four retrieval methods, each with and without LLM query rewriting (eight backends in total), are evaluated over the same benchmark:
 
 - **Text (lexical)** — `src/retrieve_text.py`:
   - uses PostgreSQL full-text search (`fts` over `search_text`),
@@ -87,7 +87,7 @@ Five retrieval methods are evaluated over the same benchmark, including rewritte
 
 - **Query rewriting variants** — `src/rewrite_query.py` plus evaluator wrappers:
   - the same four retrievers are also tested with a rewritten query,
-  - the rewrite is a single LLM-generated retrieval query,
+  - the rewrite is a single LLM-generated retrieval query (`rewrite_query.py` raises if the LLM call fails; an earlier version silently fell back to the original query, so check any rewrite results produced before 2026-11-19),
   - rewritten runs are tracked separately as `text_rewritten`, `vector_rewritten`, `vector_reranked_rewritten`, and `hybrid_rewritten`.
 
 All methods operate over the same chunk corpus (`data/chunks/chunks.jsonl`) and audience metadata.
@@ -117,7 +117,22 @@ An optional `--debug-output` parameter writes per-question, per-backend debug re
 
 ### 2.4 Findings
 
-On the current 27-question synthetic benchmark:
+Metrics recomputed from the committed `data/eval/retrieval_debug.jsonl` (27 questions per backend; strict = exact gold chunk in top 5, relaxed = same source and leaf heading in top 10):
+
+| Backend | Strict Hit@5 | Strict MRR | Relaxed Hit@10 | Relaxed MRR |
+|---|---:|---:|---:|---:|
+| `text` | 0.259 | 0.099 | 0.259 | 0.099 |
+| `text_rewritten` | 0.148 | 0.068 | 0.185 | 0.077 |
+| `vector` | 0.852 | 0.750 | 0.926 | 0.761 |
+| `vector_rewritten` | 0.815 | 0.778 | 0.926 | 0.775 |
+| `vector_reranked` | 0.926 | 0.889 | 0.963 | 0.894 |
+| `vector_reranked_rewritten` | 0.889 | 0.818 | 0.926 | 0.826 |
+| `hybrid` | 0.778 | 0.373 | 0.889 | 0.389 |
+| `hybrid_rewritten` | 0.741 | 0.302 | 0.889 | 0.325 |
+
+With 27 questions, one question is 3.7 percentage points of Hit rate, so differences of one or two questions (for example between `vector` and `vector_rewritten`) are not meaningful.
+
+Observations on this benchmark:
 
 - **Text retrieval**:
   - After loosening the full-text condition to "rank then filter on `score > 0`", strict Hit@k and MRR are non-zero (strict Hit@5: ~0.259, strict MRR: ~0.099, relaxed Hit@10: ~0.259, relaxed MRR: ~0.099).
@@ -130,18 +145,18 @@ On the current 27-question synthetic benchmark:
     - paraphrased security questions,
     - questions about risk/mitigation combinations,
     - questions using more natural, less keyword-driven language.
-  - Rewriting is slightly mixed here: strict metrics fall a little, while relaxed MRR improves slightly, but the overall win is not strong enough to make rewrite the default.
+  - Rewriting is mixed here: strict Hit@5 falls (0.852 to 0.815) while strict MRR rises (0.750 to 0.778) and relaxed Hit@10 is unchanged (0.926). The difference is a couple of questions out of 27, which is not enough to justify making rewrite the default.
 
 - **Vector reranked retrieval**:
   - Vector reranking is the current best-performing retrieval strategy on this benchmark (strict Hit@5: ~0.926, strict MRR: ~0.889, relaxed Hit@10: ~0.963, relaxed MRR: ~0.894).
   - It improves both strict and relaxed metrics over vector-only retrieval.
   - The reranker is especially helpful when vector search finds the right topic but does not place the most exact passage at rank 1.
-  - Rewriting makes this method worse on strict MRR and worse on relaxed metrics, so the rewritten variant is not preferred.
+  - Rewriting makes this method worse (strict MRR 0.889 to 0.818, relaxed Hit@10 0.963 to 0.926), so the rewritten variant is not preferred.
 
 - **Hybrid retrieval**:
   - Hybrid (RRF) improves clearly over text-only (strict Hit@5: ~0.778, strict MRR: ~0.373, relaxed Hit@10: ~0.889, relaxed MRR: ~0.389).
   - On this benchmark, hybrid does **not** outperform vector-only or vector-reranked retrieval.
-  - In some cases it pulls in useful lexical hits; in others it slightly dilutes strong vector rankings.
+  - Its MRR (0.373) is much lower than its Hit@5 (0.778), unlike vector retrieval. The cause has not been investigated (see status finding 6), so the hybrid result should not be read as a general statement about hybrid search.
   - Rewriting also hurts hybrid performance on this benchmark.
 
 - **Query rewriting overall**:
@@ -231,15 +246,12 @@ Answer quality is estimated using an LLM-as-a-judge pipeline implemented in `src
 Judged records are written to:
 
 - `data/answers/answers_vector_v1_judged.jsonl` — judged output for the v1 baseline
-- `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` — judged output for the plain-vector v2 baseline (frozen)
+- `data/answers/answers_vector_v2_judged.jsonl` — judged output for the plain-vector v2 baseline (frozen; `judge_answers_v2.py` would write `…_prompt_grounded_judged.jsonl` by default, the file was renamed)
 - `data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl` — judged output for the reranked-vector v2 default (current)
 
 The current default judged artefact is `answers_vector_reranked_v2_prompt_grounded_judged.jsonl`. The earlier judged files are preserved as frozen baselines tied to their respective answer-generation variants.
 
-For high-level comparison, a small aggregation script (or an ad hoc analysis notebook) computes:
-
-- overall proportion of `good` answers per variant,
-- optionally: `good` rate by `target_size`, `target_role`, or `source_id`.
+There is no committed aggregation script. The counts below come from tallying `judge_score` in each judged file (a one-line command is in the runbook, section 3.18.4).
 
 ### 3.4 Findings
 
@@ -252,14 +264,18 @@ On the current 27-question synthetic benchmark:
     - collapsing multi-step guidance into vague summaries,
     - occasionally under-specifying controls compared with the gold passage.
 
-- **Answer-generation v2 (prompt grounded)**:
-  - Achieves 26/27 `good` answers (approx. 96.3%).
+- **Answer-generation v2 (prompt grounded, plain vector retrieval)**:
+  - Achieves 26/27 `good` answers (approx. 96.3%). The one `bad` answer is `agentic-ai-adoption::043::q01`.
   - Improvements over v1 include:
     - better retention of named resources and frameworks,
     - stronger handling of multi-part questions,
     - more explicit, stepwise guidance aligned with ACSC wording and structure.
 
-The benchmark is still small and relies on an LLM judge rather than human labels, so the numbers should be treated as **project-level evidence** rather than production-grade evaluation. Nevertheless, the difference between v1 and v2 is large enough, and qualitatively clear enough, to justify the current default choice.
+- **Answer-generation v2 with reranked retrieval (current default)**:
+  - Also 26/27 `good`. The one `bad` answer is `ai-introduction::010::q01`.
+  - Reranking improved retrieval metrics (section 2.4) but did not change the judged answer score, so this benchmark gives no evidence of an answer-quality gain from reranking.
+
+The benchmark is small and relies on an LLM judge rather than human labels, so the numbers are **project-level evidence**, not a production-grade evaluation. A 4-answer gap between v1 and v2 is consistent with the qualitative differences noted above, but the v1 to v2 comparison also has the judge caveats in section 6.
 
 ## 3.5 Current default
 
@@ -267,7 +283,7 @@ Based on these results and the updated retrieval backend:
 
 - `src/generate_answers.py` (v2 prompt-grounded, using `retrieve_reranked.py`) is the **default answer-generation script**.
 - `data/answers/answers_vector_reranked_v2_prompt_grounded.jsonl` and `data/answers/answers_vector_reranked_v2_prompt_grounded_judged.jsonl` are the **primary** answer and judged-answer artefacts for the current default path.
-- `data/answers/answers_vector_v1.jsonl`, `data/answers/answers_vector_v1_judged.jsonl`, `data/answers/answers_vector_v2_prompt_grounded.jsonl`, and `data/answers/answers_vector_v2_prompt_grounded_judged.jsonl` are retained as frozen baselines for provenance and comparison, but are not used as the default.
+- `data/answers/answers_vector_v1.jsonl`, `data/answers/answers_vector_v1_judged.jsonl`, `data/answers/answers_vector_v2_prompt_grounded.jsonl`, and `data/answers/answers_vector_v2_judged.jsonl` are retained as frozen baselines for provenance and comparison, but are not used as the default.
 
 ---
 
@@ -281,7 +297,7 @@ The Streamlit application (`app.py`) is wired to the evaluated defaults:
   - `top_k` defaults to 5 but can be adjusted for exploration.
 
 - **Answer generation**:
-  - the UI uses the v2 prompt-grounded pipeline, i.e. the same style used in `answers_vector_v2_prompt_grounded.jsonl`,
+  - the UI imports the prompt, answer schema and chunk-ID validation from `src/generate_answers.py`, so it uses the same v2 prompt-grounded pipeline as the reranked answer set,
   - retrieved chunks and their metadata are displayed in an evidence panel, mirroring the fields used in judged evaluation.
 
 - **Monitoring**:
@@ -289,7 +305,7 @@ The Streamlit application (`app.py`) is wired to the evaluated defaults:
   - these tables are used to build the Monitoring Dashboard charts,
   - they do not alter the benchmark datasets or corpus; they simply record usage over the evaluated path.
 
-In other words, the interactive app is an evaluated path, not a separate, ad hoc configuration: it uses the same reranked retrieval + v2 setup that performed best on the synthetic benchmark.
+The app therefore runs the same retrieval and prompt code that was evaluated. Differences from the offline runs: the app's size filter `all_sizes` means no size filter, the role filter may be unset, and `top_k` is user-adjustable (3 to 10).
 
 ---
 
@@ -308,12 +324,27 @@ To replicate the current evaluation results from a clean clone:
 
 3. **Retrieval evaluation**
    - Ensure `data/ground_truth_synthetic.jsonl` is present (from the committed benchmark or regenerated as a new version).
-   - Run `uv run python src/evaluate_retrieval.py`.
+   - Run `uv run python src/evaluate_retrieval.py`. It also evaluates the rewrite variants, so `LLM_API_KEY` must be set; an LLM failure stops the run.
    - Optional: add `--debug-output data/eval/retrieval_debug.jsonl` to capture per-question debug records.
 
 4. **Answer-generation evaluation**
    - Run `uv run python src/generate_answers.py` to regenerate v2 answers if needed.
-   - Run `uv run python src/judge_answers.py` to re-judge v1 and v2 answers (or just v2).
-   - Use a small analysis script or notebook to compute `good` rates per variant.
+   - Run `uv run python src/judge_answers.py` to judge the reranked answers. Use `--answers-input` and `--output` for other files. Judging older answer sets with the current script applies a different rubric from the one that produced the committed judged files.
+   - Tally `judge_score` per file to compute `good` rates.
 
-The rest of the project (self-assessment, runbook, dataset notes, UI) should be read as describing this evaluated setup and its current default choices, rather than separate or conflicting configurations.
+Reruns call an LLM and will not reproduce the committed outputs exactly.
+
+---
+
+## 6. Limitations of this evaluation
+
+- **Small benchmark.** 27 questions (8 medium, 9 small, 10 large/government per size tag), 17 `ai_consumer` and 10 `ai_builder`. Slices by source document are smaller still. The corpus is only 350 chunks.
+- **Self-selected and not held out.** The same questions were used to compare backends and to choose defaults. Nothing was tested on unseen questions.
+- **Synthetic, seed-anchored questions.** Questions were written by an LLM from passages I selected. They are likely to share vocabulary with their gold passage, which favours retrieval methods that match phrasing. They do not cover vague, multi-source or adversarial queries.
+- **Single gold chunk per question.** Strict metrics count only the one chunk the question was generated from. Other chunks may also answer the question, which the relaxed metric only partly covers.
+- **Generator and judge are the same model.** Answer generation, question generation and judging all used `gemini-3.1-flash-lite` (from `model_id` and `judge_model_id` in the answer files). The judge has not been calibrated against human labels.
+- **Judge prompt changed between runs.** `judge_answers_v1.py`, `judge_answers_v2.py` and `judge_answers.py` have different rubric text, and the judged files do not record which version produced them. D-011 states the v1/v2 comparison used a consistent judge setup, but the repository cannot confirm that.
+- **No variance estimate.** Each answer set was generated and judged once. LLM output varies between runs.
+- **Seed vetting is not reproducible from the repo** (see section 2.1).
+
+See [`status.md`](status.md) for the corresponding findings and suggested fixes.
